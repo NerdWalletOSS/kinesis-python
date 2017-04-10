@@ -6,6 +6,8 @@ import time
 
 import boto3
 
+from botocore.exceptions import ClientError
+
 log = logging.getLogger(__name__)
 
 
@@ -46,20 +48,26 @@ class ShardReader(object):
 
     def run(self):
         client = boto3.client('kinesis')
-        while self.alive:
-            resp = client.get_records(ShardIterator=self.shard_iter)
+        try:
+            while self.alive:
+                resp = client.get_records(ShardIterator=self.shard_iter)
 
-            if not resp['NextShardIterator']:
-                # the shard has been closed
-                self.alive = False
-                break
-            self.shard_iter = resp['NextShardIterator']
+                if not resp['NextShardIterator']:
+                    # the shard has been closed
+                    self.alive = False
+                    break
+                self.shard_iter = resp['NextShardIterator']
 
-            if len(resp['Records']) == 0:
-                time.sleep(0.25)
-            else:
-                for record in resp['Records']:
-                    self.record_queue.put(record)
+                if len(resp['Records']) == 0:
+                    time.sleep(0.1)
+                else:
+                    for record in resp['Records']:
+                        self.record_queue.put(record)
+        except ClientError:
+            log.exception("Client error occurred while reading, shard reader exiting")
+            self.alive = False
+        except (SystemExit, KeyboardInterrupt):
+            pass
 
     def stop(self):
         if self.process:
