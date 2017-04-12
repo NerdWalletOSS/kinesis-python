@@ -12,6 +12,7 @@ log = logging.getLogger(__name__)
 
 
 class AsyncProducer(object):
+    """Async accumulator and producer based on a multiprocessing Queue"""
     MAX_SIZE = 2 ** 20
 
     def __init__(self, stream_name, buffer_time, queue):
@@ -96,5 +97,5 @@ if __name__ == '__main__':
     logging.getLogger('botocore').level = logging.INFO
     logging.getLogger('botocore.vendored.requests.packages.urllib3').level = logging.WARN
     producer = KinesisProducer('borgstrom-test')
-    for _ in xrange(100):
-        producer.put(str(time.time()))
+    for idx in xrange(100):
+        producer.put(str(idx))
