@@ -1,0 +1,5 @@
+#!groovy
+
+indy {
+    type = 'python'
+}
