@@ -3,6 +3,7 @@ import Queue
 import logging
 import multiprocessing
 import time
+import signal
 import sys
 
 import boto3
@@ -41,14 +42,28 @@ class ShardReader(object):
         self.shard_iter = shard_iter
         self.record_queue = record_queue
         self.error_queue = error_queue
+
+        # the alive attribute is used to control the main reader loop
+        # once our run process has started changing this flag in the parent process has no effect
+        # it is changed by our signal handler within the child process
+        self.alive = True
+
         self.process = multiprocessing.Process(target=self.run)
         self.process.start()
 
     def run(self):
+        """Run the shard reader main loop
+
+        This is called as the target of a multiprocessing Process.
+        """
         log.info("Shard reader for %s starting", self.shard_id)
+
+        signal.signal(signal.SIGTERM, self.signal_handler)
+        signal.signal(signal.SIGINT, self.signal_handler)
+
         client = boto3.client('kinesis')
         try:
-            while True:
+            while self.alive:
                 resp = client.get_records(ShardIterator=self.shard_iter)
 
                 if not resp['NextShardIterator']:
@@ -63,7 +78,7 @@ class ShardReader(object):
                     for record in resp['Records']:
                         self.record_queue.put(record)
         except (SystemExit, KeyboardInterrupt):
-            pass
+            log.debug("Exit via interrupt")
         except ClientError as exc:
             log.error("Client error occurred while reading: %s", exc)
         except Exception:
@@ -72,10 +87,21 @@ class ShardReader(object):
             self.error_queue.put(self.shard_id)
             sys.exit()
 
+    def signal_handler(self, signum, frame):
+        """Handle signals within our child process to terminate the main loop"""
+        log.info("Caught signal %s", signum)
+        self.alive = False
+
     def stop(self):
-        log.info("Shard reader for %s stoping", self.shard_id)
-        self.process.terminate()
-        self.process.join()
+        """Stop the child process started for this shard reader
+
+        This should only be called by the parent process, never from within the main run loop.
+        """
+        if self.process:
+            log.info("Shard reader for %s stoping", self.shard_id)
+            self.process.terminate()
+            self.process.join()
+            self.process = None
 
 
 class KinesisConsumer(object):
@@ -100,12 +126,14 @@ class KinesisConsumer(object):
         self.stream_data = None
         self.run = True
 
+        signal.signal(signal.SIGTERM, self.signal_handler)
+        signal.signal(signal.SIGINT, self.signal_handler)
+
         # we shutdown our shard readers at the end of our iterator loop
         # but to ensure that we don't orphan any child processes we explicitly shutdown at exit
         atexit.register(self.shutdown)
 
     def setup_shards(self):
-        log.debug("Setting up shards")
         if self.stream_data is None:
             log.debug("Describing stream")
             self.stream_data = self.client.describe_stream(StreamName=self.stream_name)
@@ -130,7 +158,9 @@ class KinesisConsumer(object):
                     self.error_queue
                 )
             else:
-                log.debug("Checking shard reader %s process", shard_data['ShardId'])
+                log.debug("Checking shard reader %s process at pid %d",
+                          shard_data['ShardId']
+                          self.shards[shard_data['ShardId']].process.pid)
                 if not self.shards[shard_data['ShardId']].process.is_alive():
                     self.shards[shard_data['ShardId']].stop()
                     del self.shards[shard_data['ShardId']]
@@ -138,13 +168,20 @@ class KinesisConsumer(object):
                     # invalidate stream_data since our shard is no longer alive
                     self.stream_data = None
                     setup_again = True
+                else:
+                    log.debug("Shard reader %s alive & well", shard_data['ShardId'])
 
         # if any of our shards were dead and we invalidated the stream data we need to run the shard setup again
         if setup_again:
             self.setup_shards()
 
+    def signal_handler(self, signum, frame):
+        log.info("Caught signal %s", signum)
+        self.shutdown()
+
     def shutdown(self):
         for shard_id in self.shards:
+            log.info("Shutting shard reader for %s", shard_id)
             self.shards[shard_id].stop()
         self.stream_data = None
         self.shards = {}
@@ -155,12 +192,16 @@ class KinesisConsumer(object):
             while self.run:
                 self.setup_shards()
 
-                while True:
+                while self.run:
                     try:
                         item = self.record_queue.get(block=True, timeout=0.25)
                         yield item
                     except Queue.Empty:
                         pass
+
+                    # this avoids logging any errors if we're shutting down
+                    if not self.run:
+                        break
 
                     try:
                         shard_reader_error = self.error_queue.get_nowait()

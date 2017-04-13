@@ -17,5 +17,5 @@ setup(
     author='Evan Borgstrom',
     author_email='eborgstrom@nerdwallet.com',
     license='Apache 2',
-    description='Python library for producing & consuming Kinesis streams'
+    description='Low level, multiprocessing based AWS Kinesis producer & consumer library'
 )

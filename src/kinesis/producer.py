@@ -28,6 +28,7 @@ class AsyncProducer(object):
         signal.signal(signal.SIGINT, self.signal_handler)
 
     def signal_handler(self, signum, frame):
+        log.info("Caught signal %s", signum)
         self.alive = False
         self.flush_records()
 
