@@ -158,9 +158,12 @@ class KinesisConsumer(object):
                     self.error_queue
                 )
             else:
-                log.debug("Checking shard reader %s process at pid %d",
-                          shard_data['ShardId']
-                          self.shards[shard_data['ShardId']].process.pid)
+                log.debug(
+                    "Checking shard reader %s process at pid %d",
+                    shard_data['ShardId'],
+                    self.shards[shard_data['ShardId']].process.pid
+                )
+
                 if not self.shards[shard_data['ShardId']].process.is_alive():
                     self.shards[shard_data['ShardId']].stop()
                     del self.shards[shard_data['ShardId']]
