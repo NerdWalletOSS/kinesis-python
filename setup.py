@@ -13,7 +13,6 @@ setup(
     install_requires=install_requires,
     packages=find_packages('src'),
     package_dir={'': 'src'},
-    namespace_packages=['kinesis'],
     author='Evan Borgstrom',
     author_email='eborgstrom@nerdwallet.com',
     license='Apache 2',
