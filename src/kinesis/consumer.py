@@ -75,8 +75,7 @@ class ShardReader(object):
                 if len(resp['Records']) == 0:
                     time.sleep(0.1)
                 else:
-                    for record in resp['Records']:
-                        self.record_queue.put(record)
+                    self.record_queue.put(resp['Records'])
         except (SystemExit, KeyboardInterrupt):
             log.debug("Exit via interrupt")
         except ClientError as exc:
@@ -197,8 +196,9 @@ class KinesisConsumer(object):
 
                 while self.run:
                     try:
-                        item = self.record_queue.get(block=True, timeout=0.25)
-                        yield item
+                        items = self.record_queue.get(block=True, timeout=0.25)
+                        for item in items:
+                            yield item
                     except Queue.Empty:
                         pass
 
