@@ -1,6 +1,6 @@
 # Kinesis Python
 
-The [official Kinesis python library](https://github.com/awslabs/amazon-kinesis-client-python) requires use to use
+The [official Kinesis python library](https://github.com/awslabs/amazon-kinesis-client-python) requires the use of
 Amazon's "MultiLangDaemon", which is a Java executable that operates by piping messages over STDIN/STDOUT.
 
 ಠ_ಠ
@@ -37,7 +37,7 @@ implementation.
 
 ## Producer
 
-The producer works by launching a single background process for accumulation and publishing to the stream.
+The producer works by launching a single process for accumulation and publishing to the stream.
 
 ```python
 from kinesis.producer import KinesisProducer
