@@ -7,7 +7,7 @@ Amazon's "MultiLangDaemon", which is a Java executable that operates by piping m
 
 While the desire to have a single implementation of the client library from a maintenance standpoint makes sense for
 the team responsible for the KPL, requiring the JRE to be installed and having to account for the overhead of the
-stream being consumed by Java and Python is not desireable for teams working is environments without Java.
+stream being consumed by Java and Python is not desireable for teams working in environments without Java.
 
 This is a pure-Python implementation of Kinesis producer and consumer classes that leverages Python's multiprocessing
 module to spawn a process per shard and then sends the messages back to the main process via a Queue.  It only depends
