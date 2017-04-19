@@ -196,7 +196,7 @@ class KinesisConsumer(object):
 
                 while self.run:
                     try:
-                        items = self.record_queue.get(block=True, timeout=0.25)
+                        items = self.record_queue.get(block=True, timeout=0.1)
                         for item in items:
                             yield item
                     except Queue.Empty:

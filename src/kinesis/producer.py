@@ -40,7 +40,7 @@ class AsyncProducer(object):
 
                 while (time.time() - timer_start < self.buffer_time):
                     try:
-                        data = self.queue.get(block=True, timeout=0.01)
+                        data = self.queue.get(block=True, timeout=0.1)
                     except Queue.Empty:
                         continue
 
