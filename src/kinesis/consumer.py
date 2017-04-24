@@ -59,7 +59,6 @@ class ShardReader(object):
         log.info("Shard reader for %s starting", self.shard_id)
 
         signal.signal(signal.SIGTERM, self.signal_handler)
-        signal.signal(signal.SIGINT, self.signal_handler)
 
         client = boto3.client('kinesis')
         try:
@@ -83,7 +82,7 @@ class ShardReader(object):
         except Exception:
             log.exception("Unhandled exception in shard reader %s", self.shard_id)
         finally:
-            self.error_queue.put(self.shard_id)
+            self.error_queue.put_nowait(self.shard_id)
             sys.exit()
 
     def signal_handler(self, signum, frame):
@@ -114,23 +113,20 @@ class KinesisConsumer(object):
     then we use LATEST as our type, otherwise we resume at the record in our checkpoint data.
     """
 
-    def __init__(self, stream_name, checkpointer=None, checkpoint_interval=5):
+    def __init__(self, stream_name, checkpointer=None, checkpoint_interval=5, boto3_session=None):
         self.stream_name = stream_name
         self.checkpointer = checkpointer
         self.checkpoint_interval = checkpoint_interval
         self.error_queue = multiprocessing.Queue()
         self.record_queue = multiprocessing.Queue()
-        self.client = boto3.client('kinesis')
+
+        if boto3_session is None:
+            boto3_session = boto3.Session()
+        self.client = boto3_session.client('kinesis')
+
         self.shards = {}
         self.stream_data = None
         self.run = True
-
-        signal.signal(signal.SIGTERM, self.signal_handler)
-        signal.signal(signal.SIGINT, self.signal_handler)
-
-        # we shutdown our shard readers at the end of our iterator loop
-        # but to ensure that we don't orphan any child processes we explicitly shutdown at exit
-        atexit.register(self.shutdown)
 
     def setup_shards(self):
         if self.stream_data is None:
@@ -176,10 +172,6 @@ class KinesisConsumer(object):
         # if any of our shards were dead and we invalidated the stream data we need to run the shard setup again
         if setup_again:
             self.setup_shards()
-
-    def signal_handler(self, signum, frame):
-        log.info("Caught signal %s", signum)
-        self.shutdown()
 
     def shutdown(self):
         for shard_id in self.shards:

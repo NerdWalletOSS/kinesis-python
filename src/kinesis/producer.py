@@ -15,24 +15,34 @@ class AsyncProducer(object):
     """Async accumulator and producer based on a multiprocessing Queue"""
     MAX_SIZE = 2 ** 20
 
-    def __init__(self, stream_name, buffer_time, queue):
+    def __init__(self, stream_name, buffer_time, queue, boto3_session=None):
         self.stream_name = stream_name
         self.buffer_time = buffer_time
         self.queue = queue
         self.records = []
         self.next_records = []
         self.alive = True
-        self.client = boto3.client('kinesis')
 
-        signal.signal(signal.SIGTERM, self.signal_handler)
-        signal.signal(signal.SIGINT, self.signal_handler)
+        if boto3_session is None:
+            boto3_session = boto3.Session()
+        self.client = boto3_session.client('kinesis')
+
+        self.process = multiprocessing.Process(target=self.run)
+        self.process.start()
+
+        atexit.register(self.shutdown)
+
+    def shutdown(self):
+        self.process.terminate()
+        self.process.join()
 
     def signal_handler(self, signum, frame):
         log.info("Caught signal %s", signum)
         self.alive = False
-        self.flush_records()
 
     def run(self):
+        signal.signal(signal.SIGTERM, self.signal_handler)
+
         try:
             while self.alive or not self.queue.empty():
                 records_size = 0
@@ -74,20 +84,10 @@ class AsyncProducer(object):
 
 
 class KinesisProducer(object):
-    """Produce to Kinesis streams
-    """
-    def __init__(self, stream_name, buffer_time=0.5):
+    """Produce to Kinesis streams via an AsyncProducer"""
+    def __init__(self, stream_name, buffer_time=0.5, boto3_session=None):
         self.queue = multiprocessing.Queue()
-
-        async_producer = AsyncProducer(stream_name, buffer_time, self.queue)
-        self.process = multiprocessing.Process(target=async_producer.run)
-
-        atexit.register(self.shutdown)
-        self.process.start()
-
-    def shutdown(self):
-        self.process.terminate()
-        self.process.join()
+        self.async_producer = AsyncProducer(stream_name, buffer_time, self.queue, boto3_session=boto3_session)
 
     def put(self, data):
         self.queue.put(data)
