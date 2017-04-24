@@ -1,4 +1,3 @@
-import atexit
 import Queue
 import logging
 import multiprocessing
