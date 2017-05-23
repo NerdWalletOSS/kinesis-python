@@ -9,6 +9,9 @@ import boto3
 
 from botocore.exceptions import ClientError
 
+RETRY_EXCEPTIONS = ('ProvisionedThroughputExceededException',
+                    'ThrottlingException')
+
 log = logging.getLogger(__name__)
 
 
@@ -60,15 +63,31 @@ class ShardReader(object):
         signal.signal(signal.SIGTERM, self.signal_handler)
 
         client = boto3.client('kinesis')
+        retries = 0
         try:
             while self.alive:
-                resp = client.get_records(ShardIterator=self.shard_iter)
+                try:
+                    resp = client.get_records(ShardIterator=self.shard_iter)
+                except ClientError as exc:
+                    if exc.response['Error']['Code'] in RETRY_EXCEPTIONS:
+                        # sleep for 0.25 seconds the first loop, 1 second the next, 4, 9, 16, up to a max of 30
+                        sleep_time = min((
+                            30,
+                            (retries or 0.5) * 2
+                        ))
+                        log.warn("Retry #%d, sleeping %d.  Caused by: %s", retries + 1, sleep_time, exc)
+                        time.sleep(sleep_time)
+                        continue
+                    else:
+                        log.error("Client error occurred while reading: %s", exc)
+                        break
 
                 if not resp['NextShardIterator']:
                     # the shard has been closed
                     break
 
                 self.shard_iter = resp['NextShardIterator']
+                retries = 0
 
                 if len(resp['Records']) == 0:
                     time.sleep(0.1)
@@ -76,8 +95,6 @@ class ShardReader(object):
                     self.record_queue.put(resp['Records'])
         except (SystemExit, KeyboardInterrupt):
             log.debug("Exit via interrupt")
-        except ClientError as exc:
-            log.error("Client error occurred while reading: %s", exc)
         except Exception:
             log.exception("Unhandled exception in shard reader %s", self.shard_id)
         finally:
