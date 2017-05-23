@@ -39,11 +39,13 @@ class FileCheckpoint(object):
 
 class ShardReader(object):
     """Read from a specific shard, passing records and errors back through queues"""
-    def __init__(self, shard_id, shard_iter, record_queue, error_queue):
+    def __init__(self, shard_id, shard_iter, record_queue, error_queue, boto3_session=None):
         self.shard_id = shard_id
         self.shard_iter = shard_iter
         self.record_queue = record_queue
         self.error_queue = error_queue
+
+        self.boto3_session = boto3_session or boto3.Session()
 
         # the alive attribute is used to control the main reader loop
         # once our run process has started changing this flag in the parent process has no effect
@@ -62,7 +64,8 @@ class ShardReader(object):
 
         signal.signal(signal.SIGTERM, self.signal_handler)
 
-        client = boto3.client('kinesis')
+        client = self.boto3_session.client('kinesis')
+
         retries = 0
         try:
             while self.alive:
@@ -136,9 +139,8 @@ class KinesisConsumer(object):
         self.error_queue = multiprocessing.Queue()
         self.record_queue = multiprocessing.Queue()
 
-        if boto3_session is None:
-            boto3_session = boto3.Session()
-        self.client = boto3_session.client('kinesis')
+        self.boto3_session = boto3_session or boto3.Session()
+        self.client = self.boto3_session.client('kinesis')
 
         self.shards = {}
         self.stream_data = None
@@ -166,7 +168,8 @@ class KinesisConsumer(object):
                     shard_data['ShardId'],
                     shard_iter['ShardIterator'],
                     self.record_queue,
-                    self.error_queue
+                    self.error_queue,
+                    boto3_session=self.boto3_session
                 )
             else:
                 log.debug(
