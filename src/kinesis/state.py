@@ -54,7 +54,6 @@ class DynamoDB(object):
             # for all other exceptions (including condition check failures) we just re-raise
             raise
 
-
     def lock_shard(self, shard_id, expires):
         dynamo_key = {'shard': shard_id}
         fqdn = socket.getfqdn()

@@ -2,10 +2,6 @@ import Queue
 import logging
 import multiprocessing
 import time
-import random
-import socket
-import signal
-import sys
 
 import boto3
 
@@ -210,7 +206,7 @@ class KinesisConsumer(object):
                             except TypeError:
                                 # no self.state
                                 pass
-                            except Exception as exc:
+                            except Exception:
                                 log.exception("Unhandled exception check pointing records from %s at %s",
                                               shard_id, item['SequenceNumber'])
                                 self.shutdown_shard_reader(shard_id)

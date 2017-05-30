@@ -1,8 +1,6 @@
-import atexit
 import logging
 import multiprocessing
 import Queue
-import signal
 import sys
 import time
 
