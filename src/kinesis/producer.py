@@ -8,12 +8,15 @@ import time
 
 import boto3
 
+from offspring.process import SubprocessLoop
+
 log = logging.getLogger(__name__)
 
 
-class AsyncProducer(object):
+class AsyncProducer(SubprocessLoop):
     """Async accumulator and producer based on a multiprocessing Queue"""
     MAX_SIZE = 2 ** 20
+    TERMINATE_ON_SHUTDOWN = False
 
     def __init__(self, stream_name, buffer_time, queue, boto3_session=None):
         self.stream_name = stream_name
@@ -27,53 +30,43 @@ class AsyncProducer(object):
             boto3_session = boto3.Session()
         self.client = boto3_session.client('kinesis')
 
-        self.process = multiprocessing.Process(target=self.run)
-        self.process.start()
+        self.start()
 
-        atexit.register(self.shutdown)
+    def loop(self):
+        records_size = 0
+        timer_start = time.time()
 
-    def shutdown(self):
-        self.process.terminate()
-        self.process.join()
+        while self.alive and (time.time() - timer_start) < self.buffer_time:
+            try:
+                data = self.queue.get(block=True, timeout=0.25)
+            except Queue.Empty:
+                continue
 
-    def signal_handler(self, signum, frame):
-        log.info("Caught signal %s", signum)
-        self.alive = False
+            record = {
+                'Data': data,
+                'PartitionKey': '{0}{1}'.format(time.clock(), time.time()),
+            }
 
-    def run(self):
-        signal.signal(signal.SIGTERM, self.signal_handler)
+            records_size += sys.getsizeof(record)
+            if records_size >= self.MAX_SIZE:
+                log.debug("Records full!  Adding to next_records: %s", record)
+                self.next_records = [record]
+                break
 
-        try:
-            while self.alive or not self.queue.empty():
-                records_size = 0
-                timer_start = time.time()
+            log.debug("Adding to records (%d bytes): %s", records_size, record)
+            self.records.append(record)
 
-                while (time.time() - timer_start < self.buffer_time):
-                    try:
-                        data = self.queue.get(block=True, timeout=0.1)
-                    except Queue.Empty:
-                        continue
+        self.flush_records()
 
-                    record = {
-                        'Data': data,
-                        'PartitionKey': '{0}{1}'.format(time.clock(), time.time()),
-                    }
-
-                    records_size += sys.getsizeof(record)
-                    if records_size >= self.MAX_SIZE:
-                        self.next_records = [record]
-                        break
-
-                    self.records.append(record)
-
-                self.flush_records()
-        except (SystemExit, KeyboardInterrupt):
-            pass
-        finally:
-            self.flush_records()
+    def end(self):
+        # At the end of our loop (before we exit, i.e. via a signal) we change our buffer time to 250ms and then re-call
+        # the loop() method to ensure that we've drained any remaining items from our queue before we exit.
+        self.buffer_time = 0.25
+        self.loop()
 
     def flush_records(self):
         if self.records:
+            log.debug("Flushing %d records", len(self.records))
             self.client.put_records(
                 StreamName=self.stream_name,
                 Records=self.records
@@ -85,7 +78,7 @@ class AsyncProducer(object):
 
 class KinesisProducer(object):
     """Produce to Kinesis streams via an AsyncProducer"""
-    def __init__(self, stream_name, buffer_time=0.5, boto3_session=None):
+    def __init__(self, stream_name, buffer_time=1.0, boto3_session=None):
         self.queue = multiprocessing.Queue()
         self.async_producer = AsyncProducer(stream_name, buffer_time, self.queue, boto3_session=boto3_session)
 

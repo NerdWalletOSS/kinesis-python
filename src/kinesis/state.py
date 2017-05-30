@@ -4,6 +4,8 @@ import time
 
 import boto3
 
+from botocore.exceptions import ClientError
+
 from .exceptions import RETRY_EXCEPTIONS
 
 log = logging.getLogger(__name__)
@@ -38,7 +40,7 @@ class DynamoDB(object):
             self.dynamo_table.update_item(
                 Key={'shard': shard_id},
                 UpdateExpression="set seq = :seq",
-                ConditionExpression="fqdn = :fqdn AND seq < :seq",
+                ConditionExpression="fqdn = :fqdn AND (attribute_not_exists(seq) OR seq < :seq)",
                 ExpressionAttributeValues={
                     ':fqdn': fqdn,
                     ':seq': seq,
@@ -48,6 +50,10 @@ class DynamoDB(object):
             if exc.response['Error']['Code'] in RETRY_EXCEPTIONS:
                 log.warn("Throttled while trying to read lock table in Dynamo: %s", exc)
                 time.sleep(1)
+
+            # for all other exceptions (including condition check failures) we just re-raise
+            raise
+
 
     def lock_shard(self, shard_id, expires):
         dynamo_key = {'shard': shard_id}
