@@ -3,7 +3,7 @@
 The [official Kinesis python library](https://github.com/awslabs/amazon-kinesis-client-python) requires the use of
 Amazon's "MultiLangDaemon", which is a Java executable that operates by piping messages over STDIN/STDOUT.
 
-ಠ_ಠ
+ಠ\_ಠ
 
 While the desire to have a single implementation of the client library from a maintenance standpoint makes sense for
 the team responsible for the KPL, requiring the JRE to be installed and having to account for the overhead of the
@@ -35,6 +35,27 @@ they are yielded for processing.  Messages are not strictly ordered, but this is
 implementation.
 
 
+### Locking, Checkpointing & Multi-instance consumption
+
+When deploying an application with multiple instances DynamoDB can be leveraged as a way to coordinate which instance
+is responsible for which shard, as it is not desirable to have each instance process all records.
+
+With or without multiple nodes it is also desirable to checkpoint the stream as you process records so that you can
+pickup from where you left off if you restart the consumer.
+
+A "state" backend that leverages DynamoDB allows consumers to coordinate which node is responsible which shards and
+where in the stream we are currently reading from.
+
+```python
+from kinesis.consumer import KinesisConsumer
+from kinesis.state import DynamoDB
+
+consumer = KinesisConsumer(stream_name='my-stream', state=DynamoDB(table_name='my-kinesis-state'))
+for message in consumer:
+    print "Received message: {0}".format(message)
+```
+
+
 ## Producer
 
 The producer works by launching a single process for accumulation and publishing to the stream.
@@ -57,17 +78,3 @@ producer = KinesisProducer(stream_name='my-stream', buffer_time=60)
 The background process takes precaution to ensure that any accumulated messages are flushed to the stream at
 shutdown time through signal handlers and the python atexit module, but it is not fully durable and if you were to
 send a `kill -9` to the producer process any accumulated messages would be lost.
-
-
-# TODO
-
-## Multi-node consumption
-
-Currently consumption is implemented under the assumption that a single node is the only consumer of all shards in a
-stream.  For the workload that was used for the initial implementation this is not a problem, but if you had a stream
-that consisted of many shards (10+) all of which were running close to their maximum throughput you would likely want
-to spread your consumption out over multiple nodes, with each node consuming a subset of the shards.
-
-This could be easily accomplished using the strong consistency of Dynamo as a method of coordination.
-
-Contributions welcome.

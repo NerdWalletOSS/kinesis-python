@@ -4,7 +4,8 @@ with open('VERSION') as version_fd:
     version = version_fd.read().strip()
 
 install_requires = [
-    'boto3>=1.4.4,<2.0'
+    'boto3>=1.4.4,<2.0',
+    'offspring>=0.0.3,<0.9',
 ]
 
 setup(

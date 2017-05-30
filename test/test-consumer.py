@@ -1,6 +1,7 @@
 import logging
 
-from kinesis.consumer import KinesisConsumer, FileCheckpoint
+from kinesis.consumer import KinesisConsumer
+from kinesis.state import DynamoDB
 
 log = logging.getLogger(__name__)
 
@@ -8,7 +9,6 @@ logging.basicConfig(level=logging.DEBUG, format='%(levelname)s %(process)d %(nam
 logging.getLogger('botocore').level = logging.INFO
 logging.getLogger('botocore.vendored.requests.packages.urllib3').level = logging.WARN
 
-checkpointer = FileCheckpoint('/tmp/borgstrom-test.checkpoint')
-consumer = KinesisConsumer('borgstrom-test', checkpointer)
+consumer = KinesisConsumer(stream_name='borgstrom-test', state=DynamoDB('kinesis-locks'))
 for message in consumer:
     log.info("Received message: %s", message)

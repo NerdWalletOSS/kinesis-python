@@ -2,123 +2,74 @@ import Queue
 import logging
 import multiprocessing
 import time
-import signal
-import sys
 
 import boto3
 
 from botocore.exceptions import ClientError
 
-RETRY_EXCEPTIONS = ('ProvisionedThroughputExceededException',
-                    'ThrottlingException')
+from offspring.process import SubprocessLoop
+
+from .exceptions import RETRY_EXCEPTIONS
 
 log = logging.getLogger(__name__)
 
 
-class FileCheckpoint(object):
-    """Checkpoint kinesis shard activity to a local file on disk"""
-
-    def __init__(self, filename_base):
-        self.filename_base = filename_base
-        self.lock = multiprocessing.Lock()
-
-    def shard_filename(self, shard):
-        return '.'.join([self.filename_base, shard])
-
-    def get(self, shard):
-        try:
-            with open(self.shard_filename(shard), 'r') as checkpoint_fd:
-                return checkpoint_fd.read()
-        except (IOError, OSError):
-            pass
-
-    def set(self, shard, position):
-        with open(self.shard_filename(shard), 'w') as checkpoint_fd:
-            checkpoint_fd.write(position)
-
-
-class ShardReader(object):
+class ShardReader(SubprocessLoop):
     """Read from a specific shard, passing records and errors back through queues"""
-    def __init__(self, shard_id, shard_iter, record_queue, error_queue, boto3_session=None):
+    # how long we sleep between calls to get_records
+    # this follow these best practices: http://docs.aws.amazon.com/streams/latest/dev/kinesis-low-latency.html
+    # this can be influeced per-reader instance via the sleep_time arg
+    DEFAULT_SLEEP_TIME = 1.0
+
+    def __init__(self, shard_id, shard_iter, record_queue, error_queue, boto3_session=None, sleep_time=None):
         self.shard_id = shard_id
         self.shard_iter = shard_iter
         self.record_queue = record_queue
         self.error_queue = error_queue
-
         self.boto3_session = boto3_session or boto3.Session()
+        self.sleep_time = sleep_time or self.DEFAULT_SLEEP_TIME
+        self.start()
 
-        # the alive attribute is used to control the main reader loop
-        # once our run process has started changing this flag in the parent process has no effect
-        # it is changed by our signal handler within the child process
-        self.alive = True
-
-        self.process = multiprocessing.Process(target=self.run)
-        self.process.start()
-
-    def run(self):
-        """Run the shard reader main loop
-
-        This is called as the target of a multiprocessing Process.
-        """
+    def begin(self):
+        """Begin the shard reader main loop"""
         log.info("Shard reader for %s starting", self.shard_id)
+        self.client = self.boto3_session.client('kinesis')
+        self.retries = 0
 
-        signal.signal(signal.SIGTERM, self.signal_handler)
+    def loop(self):
+        """Each loop iteration - returns a sleep time or False to stop the loop"""
+        # by default we will sleep for our sleep_time each loop
+        loop_status = self.sleep_time
 
-        client = self.boto3_session.client('kinesis')
-
-        retries = 0
         try:
-            while self.alive:
-                try:
-                    resp = client.get_records(ShardIterator=self.shard_iter)
-                except ClientError as exc:
-                    if exc.response['Error']['Code'] in RETRY_EXCEPTIONS:
-                        # sleep for 0.25 seconds the first loop, 1 second the next, 4, 9, 16, up to a max of 30
-                        sleep_time = min((
-                            30,
-                            (retries or 0.5) * 2
-                        ))
-                        log.warn("Retry #%d, sleeping %d.  Caused by: %s", retries + 1, sleep_time, exc)
-                        time.sleep(sleep_time)
-                        continue
-                    else:
-                        log.error("Client error occurred while reading: %s", exc)
-                        break
+            resp = self.client.get_records(ShardIterator=self.shard_iter)
+        except ClientError as exc:
+            if exc.response['Error']['Code'] in RETRY_EXCEPTIONS:
+                # sleep for 1 second the first loop, 1 second the next, then 2, 4, 6, 8, ..., up to a max of 30 or
+                # until we complete a successful get_records call
+                loop_status = min((
+                    30,
+                    (self.retries or 1) * 2
+                ))
+                log.debug("Retrying get_records (#%d %ds): %s", self.retries+1, loop_status, exc)
+            else:
+                log.error("Client error occurred while reading: %s", exc)
+                loop_status = False
+        else:
+            if not resp['NextShardIterator']:
+                # the shard has been closed
+                log.info("Our shard has been closed, exiting")
+                return False
 
-                if not resp['NextShardIterator']:
-                    # the shard has been closed
-                    break
+            self.shard_iter = resp['NextShardIterator']
+            self.record_queue.put((self.shard_id, resp))
+            self.retries = 0
 
-                self.shard_iter = resp['NextShardIterator']
-                retries = 0
+        return loop_status
 
-                if len(resp['Records']) == 0:
-                    time.sleep(0.1)
-                else:
-                    self.record_queue.put(resp['Records'])
-        except (SystemExit, KeyboardInterrupt):
-            log.debug("Exit via interrupt")
-        except Exception:
-            log.exception("Unhandled exception in shard reader %s", self.shard_id)
-        finally:
-            self.error_queue.put_nowait(self.shard_id)
-            sys.exit()
-
-    def signal_handler(self, signum, frame):
-        """Handle signals within our child process to terminate the main loop"""
-        log.info("Caught signal %s", signum)
-        self.alive = False
-
-    def stop(self):
-        """Stop the child process started for this shard reader
-
-        This should only be called by the parent process, never from within the main run loop.
-        """
-        if self.process:
-            log.info("Shard reader for %s stoping", self.shard_id)
-            self.process.terminate()
-            self.process.join()
-            self.process = None
+    def end(self):
+        """End of the main loop"""
+        log.info("Shard reader for %s stoping", self.shard_id)
 
 
 class KinesisConsumer(object):
@@ -126,42 +77,74 @@ class KinesisConsumer(object):
 
     A process is started for each shard we are to consume from.  Each process passes messages back up to the parent,
     which are returned via the main iterator.
-
-    TODO:
-    * checkpoint -- we should checkpoint to backends (start with file, expand to dynamo) if no checkpoint is provided
-    then we use LATEST as our type, otherwise we resume at the record in our checkpoint data.
     """
+    LOCK_DURATION = 30
 
-    def __init__(self, stream_name, checkpointer=None, checkpoint_interval=5, boto3_session=None):
+    def __init__(self, stream_name, boto3_session=None, state=None, reader_sleep_time=None):
         self.stream_name = stream_name
-        self.checkpointer = checkpointer
-        self.checkpoint_interval = checkpoint_interval
         self.error_queue = multiprocessing.Queue()
         self.record_queue = multiprocessing.Queue()
 
         self.boto3_session = boto3_session or boto3.Session()
-        self.client = self.boto3_session.client('kinesis')
+        self.kinesis_client = self.boto3_session.client('kinesis')
+
+        self.state = state
+
+        self.reader_sleep_time = reader_sleep_time
 
         self.shards = {}
         self.stream_data = None
         self.run = True
 
+    def state_shard_id(self, shard_id):
+        return '_'.join([self.stream_name, shard_id])
+
+    def shutdown_shard_reader(self, shard_id):
+        try:
+            self.shards[shard_id].shutdown()
+            del self.shards[shard_id]
+        except KeyError:
+            pass
+
     def setup_shards(self):
-        if self.stream_data is None:
-            log.debug("Describing stream")
-            self.stream_data = self.client.describe_stream(StreamName=self.stream_name)
-            # XXX TODO: handle StreamStatus -- our stream might not be ready, or might be deleting
+        log.debug("Describing stream")
+        self.stream_data = self.kinesis_client.describe_stream(StreamName=self.stream_name)
+        # XXX TODO: handle StreamStatus -- our stream might not be ready, or might be deleting
 
         setup_again = False
         for shard_data in self.stream_data['StreamDescription']['Shards']:
+            # see if we can get a lock on this shard id
+            try:
+                shard_locked = self.state.lock_shard(self.state_shard_id(shard_data['ShardId']), self.LOCK_DURATION)
+            except TypeError:
+                # no self.state
+                pass
+            else:
+                if not shard_locked:
+                    # if we currently have a shard reader running we stop it
+                    if shard_data['ShardId'] in self.shards:
+                        log.warn("We lost our lock on shard %s, stopping shard reader", shard_data['ShardId'])
+                        self.shutdown_shard_reader(shard_data['ShardId'])
+
+                    # since we failed to lock the shard we just continue to the next one
+                    continue
+
+            # we should try to start a shard reader if the shard id specified isn't in our shards
             if shard_data['ShardId'] not in self.shards:
-                log.debug("Shard reader for %s does not exist, creating...", shard_data['ShardId'])
-                # XXX TODO: load from checkpoint
+                log.info("Shard reader for %s does not exist, creating...", shard_data['ShardId'])
+                try:
+                    iterator_args = self.state.get_iterator_args(self.state_shard_id(shard_data['ShardId']))
+                except TypeError:
+                    # no self.state
+                    iterator_args = dict(ShardIteratorType='LATEST')
+
+                log.info("%s iterator arguments: %s", shard_data['ShardId'], iterator_args)
+
                 # get our initial iterator
-                shard_iter = self.client.get_shard_iterator(
+                shard_iter = self.kinesis_client.get_shard_iterator(
                     StreamName=self.stream_name,
                     ShardId=shard_data['ShardId'],
-                    ShardIteratorType='LATEST'
+                    **iterator_args
                 )
 
                 self.shards[shard_data['ShardId']] = ShardReader(
@@ -169,7 +152,8 @@ class KinesisConsumer(object):
                     shard_iter['ShardIterator'],
                     self.record_queue,
                     self.error_queue,
-                    boto3_session=self.boto3_session
+                    boto3_session=self.boto3_session,
+                    sleep_time=self.reader_sleep_time,
                 )
             else:
                 log.debug(
@@ -179,50 +163,68 @@ class KinesisConsumer(object):
                 )
 
                 if not self.shards[shard_data['ShardId']].process.is_alive():
-                    self.shards[shard_data['ShardId']].stop()
-                    del self.shards[shard_data['ShardId']]
-
-                    # invalidate stream_data since our shard is no longer alive
-                    self.stream_data = None
+                    self.shutdown_shard_reader(shard_data['ShardId'])
                     setup_again = True
                 else:
                     log.debug("Shard reader %s alive & well", shard_data['ShardId'])
 
-        # if any of our shards were dead and we invalidated the stream data we need to run the shard setup again
         if setup_again:
             self.setup_shards()
 
     def shutdown(self):
         for shard_id in self.shards:
-            log.info("Shutting shard reader for %s", shard_id)
-            self.shards[shard_id].stop()
+            log.info("Shutting down shard reader for %s", shard_id)
+            self.shards[shard_id].shutdown()
         self.stream_data = None
         self.shards = {}
         self.run = False
 
     def __iter__(self):
         try:
+            # use lock duration - 1 here since we want to renew our lock before it expires
+            lock_duration_check = self.LOCK_DURATION - 1
             while self.run:
+                last_setup_check = time.time()
                 self.setup_shards()
 
-                while self.run:
+                while self.run and (time.time() - last_setup_check) < lock_duration_check:
                     try:
-                        items = self.record_queue.get(block=True, timeout=0.1)
-                        for item in items:
-                            yield item
-                    except Queue.Empty:
-                        pass
-
-                    # this avoids logging any errors if we're shutting down
-                    if not self.run:
-                        break
-
-                    try:
-                        shard_reader_error = self.error_queue.get_nowait()
+                        shard_id, resp = self.record_queue.get(block=True, timeout=0.25)
                     except Queue.Empty:
                         pass
                     else:
-                        log.error("Error received from shard reader %s", shard_reader_error)
+                        state_shard_id = self.state_shard_id(shard_id)
+                        for item in resp['Records']:
+                            if not self.run:
+                                break
+
+                            log.debug(item)
+                            yield item
+
+                            try:
+                                self.state.checkpoint(state_shard_id, item['SequenceNumber'])
+                            except TypeError:
+                                # no self.state
+                                pass
+                            except Exception:
+                                log.exception("Unhandled exception check pointing records from %s at %s",
+                                              shard_id, item['SequenceNumber'])
+                                self.shutdown_shard_reader(shard_id)
+                                break
+
+                    shard_id = None
+                    try:
+                        while True:
+                            shard_id = self.error_queue.get_nowait()
+                            log.error("Error received from shard reader %s", shard_id)
+                            self.shutdown_shard_reader(shard_id)
+                    except Queue.Empty:
+                        pass
+
+                    if shard_id is not None:
+                        # we encountered an error from a shard reader, break out of the inner loop to setup the shards
                         break
+        except (KeyboardInterrupt, SystemExit):
+            self.run = False
         finally:
             self.shutdown()
