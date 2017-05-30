@@ -35,11 +35,22 @@ they are yielded for processing.  Messages are not strictly ordered, but this is
 implementation.
 
 
-### Multi-instance consumer
+### Locking, Checkpointing & Multi-instance consumption
 
 When deploying an application with multiple instances DynamoDB can be leveraged as a way to coordinate which instance
 is responsible for which shard, as it is not desirable to have each instance process all records.
 
+A "state" backend that leverages DynamoDB allows consumers to coordinate which node is responsible which shards and
+where in the stream we are currently reading from.
+
+```python
+from kinesis.consumer import KinesisConsumer
+from kinesis.state import DynamoDB
+
+consumer = KinesisConsumer(stream_name='my-stream', state=DynamoDB(table_name='my-kinesis-state'))
+for message in consumer:
+    print "Received message: {0}".format(message)
+```
 
 
 ## Producer
