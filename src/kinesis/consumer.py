@@ -116,7 +116,7 @@ class KinesisConsumer(object):
             # see if we can get a lock on this shard id
             try:
                 shard_locked = self.state.lock_shard(self.state_shard_id(shard_data['ShardId']), self.LOCK_DURATION)
-            except TypeError:
+            except AttributeError:
                 # no self.state
                 pass
             else:
@@ -134,7 +134,7 @@ class KinesisConsumer(object):
                 log.info("Shard reader for %s does not exist, creating...", shard_data['ShardId'])
                 try:
                     iterator_args = self.state.get_iterator_args(self.state_shard_id(shard_data['ShardId']))
-                except TypeError:
+                except AttributeError:
                     # no self.state
                     iterator_args = dict(ShardIteratorType='LATEST')
 
@@ -203,7 +203,7 @@ class KinesisConsumer(object):
 
                             try:
                                 self.state.checkpoint(state_shard_id, item['SequenceNumber'])
-                            except TypeError:
+                            except AttributeError:
                                 # no self.state
                                 pass
                             except Exception:
