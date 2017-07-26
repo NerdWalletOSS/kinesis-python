@@ -43,8 +43,12 @@ class AsyncProducer(SubprocessLoop):
         timer_start = time.time()
 
         while self.alive and (time.time() - timer_start) < self.buffer_time:
+            # we want our queue to block up until the end of this buffer cycle, so we set out timeout to the amount
+            # remaining in buffer_time by substracting how long we spent so far during this cycle
+            queue_timeout = self.buffer_time - (time.time() - timer_start)
             try:
-                data = self.queue.get(block=True, timeout=0.25)
+                log.debug("Fetching from queue with timeout: %s", queue_timeout)
+                data = self.queue.get(block=True, timeout=queue_timeout)
             except Queue.Empty:
                 continue
 
