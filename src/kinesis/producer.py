@@ -53,12 +53,6 @@ class AsyncProducer(SubprocessLoop):
                 'PartitionKey': '{0}{1}'.format(time.clock(), time.time()),
             }
 
-            records_count += 1
-            if records_count == self.MAX_COUNT:
-                log.debug("Records exceed MAX_COUNT!  Adding to next_records: %s", record)
-                self.next_records = [record]
-                break
-
             records_size += sys.getsizeof(record)
             if records_size >= self.MAX_SIZE:
                 log.debug("Records exceed MAX_SIZE!  Adding to next_records: %s", record)
@@ -67,6 +61,11 @@ class AsyncProducer(SubprocessLoop):
 
             log.debug("Adding to records (%d bytes): %s", records_size, record)
             self.records.append(record)
+
+            records_count += 1
+            if records_count == self.MAX_COUNT:
+                log.debug("Records have reached MAX_COUNT!  Flushing records.")
+                break
 
         self.flush_records()
 
