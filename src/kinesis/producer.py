@@ -55,7 +55,7 @@ class AsyncProducer(SubprocessLoop):
             }
 
             records_count += 1
-            if records_count >= self.MAX_COUNT:
+            if records_count == self.MAX_COUNT:
                 log.debug("Records exceed MAX_COUNT!  Adding to next_records: %s", record)
                 self.next_records = [record]
                 break
