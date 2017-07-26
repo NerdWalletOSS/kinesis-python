@@ -23,7 +23,6 @@ class AsyncProducer(SubprocessLoop):
     # This is the max number of messages that we'll send in a single call.
     MAX_COUNT = 1000
 
-
     def __init__(self, stream_name, buffer_time, queue, boto3_session=None):
         self.stream_name = stream_name
         self.buffer_time = buffer_time
