@@ -1,4 +1,8 @@
-import Queue
+try:
+    import Queue
+except ImportError:
+    # Python 3
+    import queue as Queue
 import logging
 import multiprocessing
 import time
