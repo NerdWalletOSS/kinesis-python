@@ -16,6 +16,7 @@ setup(
     install_requires = [
         'boto3>=1.4.4,<2.0',
         'offspring>=0.0.3,<1.0',
+        'six>=1.11.0,<2.0',
     ],
     packages=find_packages('src'),
     package_dir={'': 'src'},
