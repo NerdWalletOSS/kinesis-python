@@ -13,7 +13,7 @@ setup(
     long_description=long_description,
     url='https://github.com/NerdWalletOSS/kinesis-python',
 
-    install_requires = [
+    install_requires=[
         'boto3>=1.4.4,<2.0',
         'offspring>=0.0.3,<1.0',
         'six>=1.11.0,<2.0',
