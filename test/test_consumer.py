@@ -1,9 +1,9 @@
 from kinesis.consumer import KinesisConsumer
 
 try:
-    from unittest.mock import MagicMock, call
+    from unittest.mock import MagicMock
 except ImportError:
-    from mock import MagicMock, call
+    from mock import MagicMock
 
 
 def test_setup_shards(mocker):
