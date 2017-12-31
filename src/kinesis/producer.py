@@ -1,3 +1,4 @@
+import collections
 import logging
 import multiprocessing
 try:
@@ -9,10 +10,43 @@ import sys
 import time
 
 import boto3
+import six
 
 from offspring.process import SubprocessLoop
 
 log = logging.getLogger(__name__)
+
+
+def sizeof(obj, seen=None):
+    """Recursively and fully calculate the size of an object"""
+    obj_id = id(obj)
+    try:
+        if obj_id in seen:
+            return 0
+    except TypeError:
+        seen = set()
+
+    seen.add(obj_id)
+
+    size = sys.getsizeof(obj)
+
+    # since strings are containers we return their size before we check for a container
+    if isinstance(obj, six.string_types):
+        return size
+
+    if isinstance(obj, collections.Container):
+        return size + sum(
+            sizeof(item, seen)
+            for item in obj
+        )
+
+    if isinstance(obj, collections.Mapping):
+        return size + sum(
+            sizeof(key, seen) + sizeof(val, seen)
+            for key, val in six.iteritems(obj)
+        )
+
+    return size
 
 
 class AsyncProducer(SubprocessLoop):
@@ -20,20 +54,24 @@ class AsyncProducer(SubprocessLoop):
     # Tell our subprocess loop that we don't want to terminate on shutdown since we want to drain our queue first
     TERMINATE_ON_SHUTDOWN = False
 
-    # This it the max size data that we'll send in a single call.  We use 99% of 1Mb to account for the extra overhead
-    # of JSON syntax that is not taken into account when we use sys.getsizeof since it's measuring the python object
-    MAX_SIZE = int((2 ** 20) * .99)
-
-    # This is the max number of messages that we'll send in a single call.
+    # Max size & count
+    # Per: https://docs.aws.amazon.com/streams/latest/dev/service-sizes-and-limits.html
+    #
+    # * The maximum size of a data blob (the data payload before base64-encoding) is up to 1 MB.
+    # * Each shard can support up to 1,000 records per second for writes, up to a maximum total data write rate of 1 MB
+    #   per second (including partition keys).
+    MAX_SIZE = (2 ** 20)
     MAX_COUNT = 1000
 
-    def __init__(self, stream_name, buffer_time, queue, boto3_session=None):
+    def __init__(self, stream_name, buffer_time, queue, max_count=None, max_size=None, boto3_session=None):
         self.stream_name = stream_name
         self.buffer_time = buffer_time
         self.queue = queue
         self.records = []
         self.next_records = []
         self.alive = True
+        self.max_count = max_count or self.MAX_COUNT
+        self.max_size = max_size or self.MAX_SIZE
 
         if boto3_session is None:
             boto3_session = boto3.Session()
@@ -52,18 +90,20 @@ class AsyncProducer(SubprocessLoop):
             queue_timeout = self.buffer_time - (time.time() - timer_start)
             try:
                 log.debug("Fetching from queue with timeout: %s", queue_timeout)
-                data = self.queue.get(block=True, timeout=queue_timeout)
+                data, explicit_hash_key, partition_key = self.queue.get(block=True, timeout=queue_timeout)
             except Queue.Empty:
                 continue
 
             record = {
                 'Data': data,
-                'PartitionKey': '{0}{1}'.format(time.clock(), time.time()),
+                'PartitionKey': partition_key or '{0}{1}'.format(time.clock(), time.time()),
             }
+            if explicit_hash_key is not None:
+                record['ExplicitHashKey'] = explicit_hash_key
 
-            records_size += sys.getsizeof(record)
-            if records_size >= self.MAX_SIZE:
-                log.debug("Records exceed MAX_SIZE!  Adding to next_records: %s", record)
+            records_size += sizeof(record)
+            if records_size >= self.max_size:
+                log.debug("Records exceed MAX_SIZE (%s)!  Adding to next_records: %s", self.max_size, record)
                 self.next_records = [record]
                 break
 
@@ -71,8 +111,8 @@ class AsyncProducer(SubprocessLoop):
             self.records.append(record)
 
             records_count += 1
-            if records_count == self.MAX_COUNT:
-                log.debug("Records have reached MAX_COUNT!  Flushing records.")
+            if records_count == self.max_count:
+                log.debug("Records have reached MAX_COUNT (%s)!  Flushing records.", self.max_count)
                 break
 
         self.flush_records()
@@ -97,9 +137,10 @@ class AsyncProducer(SubprocessLoop):
 
 class KinesisProducer(object):
     """Produce to Kinesis streams via an AsyncProducer"""
-    def __init__(self, stream_name, buffer_time=1.0, boto3_session=None):
+    def __init__(self, stream_name, buffer_time=0.5, max_count=None, max_size=None, boto3_session=None):
         self.queue = multiprocessing.Queue()
-        self.async_producer = AsyncProducer(stream_name, buffer_time, self.queue, boto3_session=boto3_session)
+        self.async_producer = AsyncProducer(stream_name, buffer_time, self.queue, max_count=max_count,
+                                            max_size=max_size, boto3_session=boto3_session)
 
-    def put(self, data):
-        self.queue.put(data)
+    def put(self, data, explicit_hash_key=None, partition_key=None):
+        self.queue.put((data, explicit_hash_key, partition_key))

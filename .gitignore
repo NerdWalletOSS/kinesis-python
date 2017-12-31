@@ -2,8 +2,10 @@
 
 *.pyc
 
-/build
+/build/
+/dist/
 
 /.cache
+/.coverage
 
 *.egg-info/
