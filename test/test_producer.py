@@ -1,5 +1,3 @@
-import os
-
 from kinesis.producer import KinesisProducer
 
 
