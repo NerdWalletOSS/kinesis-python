@@ -1,14 +1,11 @@
 from setuptools import setup, find_packages
 
-with open('VERSION') as version_fd:
-    version = version_fd.read().strip()
-
 with open('README.md', 'r') as readme_fd:
     long_description = readme_fd.read()
 
 setup(
     name='kinesis-python',
-    version=version,
+    version='0.1.5',
     description='Low level, multiprocessing based AWS Kinesis producer & consumer library',
     long_description=long_description,
     url='https://github.com/NerdWalletOSS/kinesis-python',
