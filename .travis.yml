@@ -12,7 +12,7 @@ python:
   - pypy
 
 install: false
-script: .travis.sh
+script: ./.travis.sh
 after_success:
   - bash <(curl -s https://codecov.io/bash)
 
