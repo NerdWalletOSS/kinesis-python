@@ -63,13 +63,15 @@ class AsyncProducer(SubprocessLoop):
     MAX_SIZE = (2 ** 20)
     MAX_COUNT = 1000
 
-    def __init__(self, stream_name, buffer_time, queue, boto3_session=None):
+    def __init__(self, stream_name, buffer_time, queue, max_count=None, max_size=None, boto3_session=None):
         self.stream_name = stream_name
         self.buffer_time = buffer_time
         self.queue = queue
         self.records = []
         self.next_records = []
         self.alive = True
+        self.max_count = max_count or self.MAX_COUNT
+        self.max_size = max_size or self.MAX_SIZE
 
         if boto3_session is None:
             boto3_session = boto3.Session()
@@ -100,8 +102,8 @@ class AsyncProducer(SubprocessLoop):
                 record['ExplicitHashKey'] = explicit_hash_key
 
             records_size += sizeof(record)
-            if records_size >= self.MAX_SIZE:
-                log.debug("Records exceed MAX_SIZE!  Adding to next_records: %s", record)
+            if records_size >= self.max_size:
+                log.debug("Records exceed MAX_SIZE (%s)!  Adding to next_records: %s", self.max_size, record)
                 self.next_records = [record]
                 break
 
@@ -109,8 +111,8 @@ class AsyncProducer(SubprocessLoop):
             self.records.append(record)
 
             records_count += 1
-            if records_count == self.MAX_COUNT:
-                log.debug("Records have reached MAX_COUNT!  Flushing records.")
+            if records_count == self.max_count:
+                log.debug("Records have reached MAX_COUNT (%s)!  Flushing records.", self.max_count)
                 break
 
         self.flush_records()
@@ -135,9 +137,10 @@ class AsyncProducer(SubprocessLoop):
 
 class KinesisProducer(object):
     """Produce to Kinesis streams via an AsyncProducer"""
-    def __init__(self, stream_name, buffer_time=0.5, boto3_session=None):
+    def __init__(self, stream_name, buffer_time=0.5, max_count=None, max_size=None, boto3_session=None):
         self.queue = multiprocessing.Queue()
-        self.async_producer = AsyncProducer(stream_name, buffer_time, self.queue, boto3_session=boto3_session)
+        self.async_producer = AsyncProducer(stream_name, buffer_time, self.queue, max_count=max_count,
+                                            max_size=max_size, boto3_session=boto3_session)
 
     def put(self, data, explicit_hash_key=None, partition_key=None):
         self.queue.put((data, explicit_hash_key, partition_key))
