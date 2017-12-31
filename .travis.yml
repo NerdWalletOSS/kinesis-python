@@ -12,7 +12,10 @@ python:
   - pypy
 
 install: false
-script: ./.travis.sh
+script:
+  - pip install -e .
+  - pip install codecov pytest pytest-mock
+  - coverage run --source=src $(which py.test) test/
 after_success:
   - bash <(curl -s https://codecov.io/bash)
 
