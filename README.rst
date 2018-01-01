@@ -117,6 +117,6 @@ AWS Permissions
 
 By default the producer, consumer & state classes all use the default `boto3 credentials chain`_.  If you wish to alter
 this you can instantiate your own ``boto3.Session`` object and pass it into the constructor via the ``boto3_session``
-keyword argument of `KinesisProducer`, `KinesisConsumer` or `DynamoDB`.
+keyword argument of ``KinesisProducer``, ``KinesisConsumer`` or ``DynamoDB``.
 
 .. _boto3 credentials chain: http://boto3.readthedocs.io/en/latest/guide/configuration.html#configuring-credentials
