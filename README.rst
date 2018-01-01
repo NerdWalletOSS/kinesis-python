@@ -27,6 +27,9 @@ This is a pure-Python implementation of Kinesis producer and consumer classes th
 module to spawn a process per shard and then sends the messages back to the main process via a Queue.  It only depends
 on the boto3 library.
 
+It also includes a DynamoDB state back-end that allows for multi-instance consumption of multiple shards, and stores the
+checkpoint data so that you can resume where you left off in a stream following restarts or crashes.
+
 .. _official Kinesis python library: https://github.com/awslabs/amazon-kinesis-client-python
 
 
@@ -75,6 +78,9 @@ where in the stream we are currently reading from.
         print "Received message: {0}".format(message)
 
 
+The DynamoDB table must already exist and must have a ``HASH`` key of ``shard``, with type ``S`` (string).
+
+
 Producer
 ~~~~~~~~
 
@@ -100,3 +106,14 @@ example, if your primary concern is budget and not performance you could accumul
 The background process takes precaution to ensure that any accumulated messages are flushed to the stream at
 shutdown time through signal handlers and the python atexit module, but it is not fully durable and if you were to
 send a ``kill -9`` to the producer process any accumulated messages would be lost.
+
+
+
+AWS Permissions
+---------------
+
+By default the producer, consumer & state classes all use the default `boto3 credentials chain`_.  If you wish to alter
+this you can instantiate your own ``boto3.Session`` object and pass it into the constructor via the ``boto3_session``
+keyword argument.
+
+.. _boto3 credentials chain: http://boto3.readthedocs.io/en/latest/guide/configuration.html#configuring-credentials
