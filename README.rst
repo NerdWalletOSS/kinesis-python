@@ -25,11 +25,14 @@ stream being consumed by Java and Python is not desireable for teams working in 
 
 This is a pure-Python implementation of Kinesis producer and consumer classes that leverages Python's multiprocessing
 module to spawn a process per shard and then sends the messages back to the main process via a Queue.  It only depends
-on the boto3 library.
+on `boto3`_ (AWS SDK), `offspring`_ (Subprocess implementation) and `six`_ (py2/py3 compatibility).
 
 It also includes a DynamoDB state back-end that allows for multi-instance consumption of multiple shards, and stores the
 checkpoint data so that you can resume where you left off in a stream following restarts or crashes.
 
+.. _boto3: https://pypi.python.org/pypi/boto3
+.. _offspring: https://pypi.python.org/pypi/offspring
+.. _six: https://pypi.python.org/pypi/six
 .. _official Kinesis python library: https://github.com/awslabs/amazon-kinesis-client-python
 
 
