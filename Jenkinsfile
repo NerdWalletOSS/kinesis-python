@@ -1,5 +1,5 @@
 #!groovy
 
 indy {
-    type = 'python'
+    base = 'ubuntu-2017.05.23'
 }
