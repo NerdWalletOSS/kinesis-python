@@ -30,7 +30,7 @@ def sizeof(obj, seen=None):
 
     size = sys.getsizeof(obj)
 
-    # since strings are containers we return their size before we check for a container
+    # since strings are iterabes we return their size explicitly first
     if isinstance(obj, six.string_types):
         return size
     elif isinstance(obj, collections.Mapping):
