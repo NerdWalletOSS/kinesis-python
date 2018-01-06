@@ -114,6 +114,7 @@ class AsyncProducer(SubprocessLoop):
                 break
 
         self.flush_records()
+        return 0
 
     def end(self):
         # At the end of our loop (before we exit, i.e. via a signal) we change our buffer time to 250ms and then re-call
