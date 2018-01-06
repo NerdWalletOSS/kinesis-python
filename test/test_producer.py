@@ -1,4 +1,6 @@
-from kinesis.producer import KinesisProducer
+import sys
+
+from kinesis.producer import KinesisProducer, sizeof
 
 
 def test_producer(mocker):
@@ -16,3 +18,15 @@ def test_producer(mocker):
     mocked_queue = mocker.patch.object(producer, 'queue')
     producer.put('foo', explicit_hash_key='hash', partition_key='partition')
     mocked_queue.put.assert_called_with(('foo', 'hash', 'partition'))
+
+
+def test_sizeof():
+    s1 = "a"
+    assert sizeof(s1) == sys.getsizeof(s1)
+
+    s2 = ["a", "b", "a"]
+    assert sizeof(s2) == sys.getsizeof(s2) + sys.getsizeof("a") + sys.getsizeof("b")
+
+    s3 = {"a": "a", "b": "a", "c": 1}
+    assert sizeof(s3) == sys.getsizeof(s3) + sys.getsizeof("a") + sys.getsizeof("b") + sys.getsizeof("c") + \
+        sys.getsizeof(1)

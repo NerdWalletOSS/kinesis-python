@@ -30,20 +30,18 @@ def sizeof(obj, seen=None):
 
     size = sys.getsizeof(obj)
 
-    # since strings are containers we return their size before we check for a container
+    # since strings are iterabes we return their size explicitly first
     if isinstance(obj, six.string_types):
         return size
-
-    if isinstance(obj, collections.Container):
-        return size + sum(
-            sizeof(item, seen)
-            for item in obj
-        )
-
-    if isinstance(obj, collections.Mapping):
+    elif isinstance(obj, collections.Mapping):
         return size + sum(
             sizeof(key, seen) + sizeof(val, seen)
             for key, val in six.iteritems(obj)
+        )
+    elif isinstance(obj, collections.Iterable):
+        return size + sum(
+            sizeof(item, seen)
+            for item in obj
         )
 
     return size
@@ -116,6 +114,7 @@ class AsyncProducer(SubprocessLoop):
                 break
 
         self.flush_records()
+        return 0
 
     def end(self):
         # At the end of our loop (before we exit, i.e. via a signal) we change our buffer time to 250ms and then re-call
