@@ -33,17 +33,15 @@ def sizeof(obj, seen=None):
     # since strings are containers we return their size before we check for a container
     if isinstance(obj, six.string_types):
         return size
-
-    if isinstance(obj, collections.Container):
-        return size + sum(
-            sizeof(item, seen)
-            for item in obj
-        )
-
-    if isinstance(obj, collections.Mapping):
+    elif isinstance(obj, collections.Mapping):
         return size + sum(
             sizeof(key, seen) + sizeof(val, seen)
             for key, val in six.iteritems(obj)
+        )
+    elif isinstance(obj, collections.Iterable):
+        return size + sum(
+            sizeof(item, seen)
+            for item in obj
         )
 
     return size
