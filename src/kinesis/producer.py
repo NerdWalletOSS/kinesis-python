@@ -60,7 +60,7 @@ class AsyncProducer(SubprocessLoop):
     #   per second (including partition keys).
     # * PutRecords supports up to 500 records in a single call
     MAX_SIZE = (2 ** 20)
-    MAX_COUNT = 500 
+    MAX_COUNT = 500
 
     def __init__(self, stream_name, buffer_time, queue, max_count=None, max_size=None, boto3_session=None):
         self.stream_name = stream_name
