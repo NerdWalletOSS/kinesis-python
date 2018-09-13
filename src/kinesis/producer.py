@@ -82,6 +82,7 @@ class AsyncProducer(SubprocessLoop):
         records_size = 0
         records_count = 0
         timer_start = time.time()
+        loop_status = 0
 
         while self.alive and (time.time() - timer_start) < self.buffer_time:
             # we want our queue to block up until the end of this buffer cycle, so we set out timeout to the amount
@@ -94,6 +95,10 @@ class AsyncProducer(SubprocessLoop):
                 continue
             except Exception as exc:
                 log.exception("UNHANDLED EXCEPTION {0}".format(exc))
+                log.error("Shutting down...")
+                self.alive = False
+                loop_status = False
+                break
             else:
                 record = {
                     'Data': data,
@@ -121,7 +126,7 @@ class AsyncProducer(SubprocessLoop):
                     log.debug("Records have reached MAX_COUNT (%s)!  Flushing records.", self.max_count)
                     break
         self.flush_records()
-        return 0
+        return loop_status
 
     def end(self):
         # At the end of our loop (before we exit, i.e. via a signal) we change our buffer time to 250ms and then re-call
@@ -159,7 +164,15 @@ class KinesisProducer(object):
                                             max_size=max_size, boto3_session=boto3_session)
 
     def put(self, data, explicit_hash_key=None, partition_key=None):
-        self.queue.put((data, explicit_hash_key, partition_key))
+        if not self.async_producer.alive:
+            self.async_producer.shutdown()
+            self.__init__()
+        try:
+            self.queue.put((data, explicit_hash_key, partition_key))
+        except Exception as exc:
+            log.exception("UNHANDLED EXCEPTION {0}".format(exc))
+            log.error("Shutting down...")
+            self.shutdown()
 
     def shutdown(self):
         log.debug("Shutting down the producer...")

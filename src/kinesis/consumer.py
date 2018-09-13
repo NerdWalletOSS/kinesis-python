@@ -67,9 +67,13 @@ class ShardReader(SubprocessLoop):
                 return False
 
             self.shard_iter = resp['NextShardIterator']
-            self.record_queue.put((self.shard_id, resp))
+            try:
+                self.record_queue.put((self.shard_id, resp))
+            except Exception as exc:
+                log.exception("UNHANDLED EXCEPTION {0}".format(exc))
+                log.error("Shutting down...")
+                loop_status = False
             self.retries = 0
-
         return loop_status
 
     def end(self):
@@ -112,9 +116,9 @@ class KinesisConsumer(object):
         log.warning("Shutting down shard reader {0}".format(shard_id))
         try:
             log.warning("Stopping subprocess for shard reader {0}".format(shard_id))
-            log.warning("Terminating shard reader {0}".format(self.shards[shard_id]))
-            self.shards[shard_id].process.terminate()
-            # self.shards[shard_id].shutdown()
+            log.warning("Shutting down shard reader {0}".format(self.shards[shard_id]))
+            # self.shards[shard_id].process.terminate()
+            self.shards[shard_id].shutdown()
             del self.shards[shard_id]
             log.warning("Completed shutdown of shard reader {0}".format(shard_id))
         except KeyError:
@@ -190,8 +194,8 @@ class KinesisConsumer(object):
         self.run = False
         for shard_id in self.shards:
             log.info("Shutting down shard reader for %s", shard_id)
-            self.shards[shard_id].process.terminate()
-            # self.shards[shard_id].shutdown()
+            # self.shards[shard_id].process.terminate()
+            self.shards[shard_id].shutdown()
         self.stream_data = None
         self.shards = {}
 
@@ -208,6 +212,11 @@ class KinesisConsumer(object):
                         shard_id, resp = self.record_queue.get(block=True, timeout=0.25)
                     except Queue.Empty:
                         pass
+                    except Exception as exc:
+                        log.exception("UNHANDLED EXCEPTION {0}".format(exc))
+                        log.error("Shutting down...")
+                        self.run = False
+                        break
                     else:
                         state_shard_id = self.state_shard_id(shard_id)
                         for item in resp['Records']:
