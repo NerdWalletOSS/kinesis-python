@@ -173,6 +173,7 @@ class KinesisProducer(object):
             log.exception("UNHANDLED EXCEPTION {0}".format(exc))
             log.error("Shutting down...")
             self.shutdown()
+            raise
 
     def shutdown(self):
         log.debug("Shutting down the producer...")
