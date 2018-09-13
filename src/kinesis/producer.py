@@ -91,28 +91,29 @@ class AsyncProducer(SubprocessLoop):
                 data, explicit_hash_key, partition_key = self.queue.get(block=True, timeout=queue_timeout)
             except Queue.Empty:
                 continue
+            except Exception as exc:
+                log.exception("UNHANDLED EXCEPTION {0}".format(exc))
+            else:
+                record = {
+                    'Data': data,
+                    'PartitionKey': partition_key or '{0}{1}'.format(time.clock(), time.time()),
+                }
+                if explicit_hash_key is not None:
+                    record['ExplicitHashKey'] = explicit_hash_key
 
-            record = {
-                'Data': data,
-                'PartitionKey': partition_key or '{0}{1}'.format(time.clock(), time.time()),
-            }
-            if explicit_hash_key is not None:
-                record['ExplicitHashKey'] = explicit_hash_key
+                records_size += sizeof(record)
+                if records_size >= self.max_size:
+                    log.debug("Records exceed MAX_SIZE (%s)!  Adding to next_records: %s", self.max_size, record)
+                    self.next_records = [record]
+                    break
 
-            records_size += sizeof(record)
-            if records_size >= self.max_size:
-                log.debug("Records exceed MAX_SIZE (%s)!  Adding to next_records: %s", self.max_size, record)
-                self.next_records = [record]
-                break
+                log.debug("Adding to records (%d bytes): %s", records_size, record)
+                self.records.append(record)
 
-            log.debug("Adding to records (%d bytes): %s", records_size, record)
-            self.records.append(record)
-
-            records_count += 1
-            if records_count == self.max_count:
-                log.debug("Records have reached MAX_COUNT (%s)!  Flushing records.", self.max_count)
-                break
-
+                records_count += 1
+                if records_count == self.max_count:
+                    log.debug("Records have reached MAX_COUNT (%s)!  Flushing records.", self.max_count)
+                    break
         self.flush_records()
         return 0
 
