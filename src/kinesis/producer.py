@@ -51,6 +51,7 @@ class AsyncProducer(SubprocessLoop):
     """Async accumulator and producer based on a multiprocessing Queue"""
     # Tell our subprocess loop that we don't want to terminate on shutdown since we want to drain our queue first
     TERMINATE_ON_SHUTDOWN = False
+    # TERMINATE_ON_SHUTDOWN = True
 
     # Max size & count
     # Per: https://docs.aws.amazon.com/streams/latest/dev/service-sizes-and-limits.html
@@ -101,6 +102,11 @@ class AsyncProducer(SubprocessLoop):
                 if explicit_hash_key is not None:
                     record['ExplicitHashKey'] = explicit_hash_key
 
+                # Get the size of any leftover records
+                for i in self.records:
+                    records_size += sizeof(i)
+                    records_count += 1
+
                 records_size += sizeof(record)
                 if records_size >= self.max_size:
                     log.debug("Records exceed MAX_SIZE (%s)!  Adding to next_records: %s", self.max_size, record)
@@ -120,8 +126,11 @@ class AsyncProducer(SubprocessLoop):
     def end(self):
         # At the end of our loop (before we exit, i.e. via a signal) we change our buffer time to 250ms and then re-call
         # the loop() method to ensure that we've drained any remaining items from our queue before we exit.
-        self.buffer_time = 0.25
-        self.loop()
+        while len(self.records) > 0:
+            log.debug("Ending producer, flushing {0} records...".format(len(self.records)))
+            self.buffer_time = 0.25
+            self.loop()
+        self.alive = False
 
     def flush_records(self):
         if self.records:
@@ -130,7 +139,8 @@ class AsyncProducer(SubprocessLoop):
                 StreamName=self.stream_name,
                 Records=self.records
             )
-
+            log.debug("Flushed %d records", len(self.records))
+            log.debug("%d next records", len(self.next_records))
         self.records = self.next_records
         self.next_records = []
 
@@ -152,5 +162,5 @@ class KinesisProducer(object):
         self.queue.put((data, explicit_hash_key, partition_key))
 
     def shutdown(self):
-        self.alive = False
-        self.async_producer.process.terminate()
+        log.debug("Shutting down the producer...")
+        self.async_producer.shutdown()
