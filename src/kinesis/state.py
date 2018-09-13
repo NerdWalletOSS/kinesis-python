@@ -33,26 +33,30 @@ class DynamoDB(object):
 
     def checkpoint(self, shard_id, seq):
         fqdn = socket.getfqdn()
+        retries = 10
 
-        try:
-            # update the seq attr in our item
-            # ensure our fqdn still holds the lock and the new seq is bigger than what's already there
-            self.dynamo_table.update_item(
-                Key={'shard': shard_id},
-                UpdateExpression="set seq = :seq",
-                ConditionExpression="fqdn = :fqdn AND (attribute_not_exists(seq) OR seq < :seq)",
-                ExpressionAttributeValues={
-                    ':fqdn': fqdn,
-                    ':seq': seq,
-                }
-            )
-        except ClientError as exc:
-            if exc.response['Error']['Code'] in RETRY_EXCEPTIONS:
-                log.warn("Throttled while trying to read lock table in Dynamo: %s", exc)
+        while retries > 0:
+            retries -= 1
+            try:
+                # update the seq attr in our item
+                # ensure our fqdn still holds the lock and the new seq is bigger than what's already there
+                self.dynamo_table.update_item(
+                    Key={'shard': shard_id},
+                    UpdateExpression="set seq = :seq",
+                    ConditionExpression="fqdn = :fqdn AND (attribute_not_exists(seq) OR seq < :seq)",
+                    ExpressionAttributeValues={
+                        ':fqdn': fqdn,
+                        ':seq': seq,
+                    }
+                )
+                break
+            except ClientError as exc:
+                if exc.response['Error']['Code'] in RETRY_EXCEPTIONS:
+                    log.warning("Throttled while trying to read lock table in Dynamo: %s", exc)
+                    time.sleep(1)
+            except Exception as exc:
+                log.exception("Unhandled exception {0}".format(exc))
                 time.sleep(1)
-
-            # for all other exceptions (including condition check failures) we just re-raise
-            raise
 
     def lock_shard(self, shard_id, expires):
         dynamo_key = {'shard': shard_id}
@@ -69,7 +73,7 @@ class DynamoDB(object):
             pass
         except ClientError as exc:
             if exc.response['Error']['Code'] in RETRY_EXCEPTIONS:
-                log.warn("Throttled while trying to read lock table in Dynamo: %s", exc)
+                log.warning("Throttled while trying to read lock table in Dynamo: %s", exc)
                 time.sleep(1)
                 return self.lock_shard(shard_id)
 
@@ -121,9 +125,10 @@ class DynamoDB(object):
                 return False
 
             if exc.response['Error']['Code'] in RETRY_EXCEPTIONS:
-                log.warn("Throttled while trying to write lock table in Dynamo: %s", exc)
+                log.warning("Throttled while trying to write lock table in Dynamo: %s", exc)
                 time.sleep(1)
                 return self.should_start_shard_reader(shard_id)
 
         # we now hold the lock (or we don't use dynamo and don't care about the lock)
+        log.info("Holding lock for shard {0}".format(shard_id))
         return True

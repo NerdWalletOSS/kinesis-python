@@ -136,10 +136,20 @@ class AsyncProducer(SubprocessLoop):
 
 class KinesisProducer(object):
     """Produce to Kinesis streams via an AsyncProducer"""
-    def __init__(self, stream_name, buffer_time=0.5, max_count=None, max_size=None, boto3_session=None):
-        self.queue = multiprocessing.Queue()
+    def __init__(self, stream_name, buffer_time=0.5, max_count=None, max_size=None, boto3_session=None,
+                 max_queue_size=None):
+        self.max_queue_size = max_queue_size
+        if self.max_queue_size:
+            self.queue = multiprocessing.Queue(maxsize=self.max_queue_size)
+        else:
+            self.queue = multiprocessing.Queue()
+
         self.async_producer = AsyncProducer(stream_name, buffer_time, self.queue, max_count=max_count,
                                             max_size=max_size, boto3_session=boto3_session)
 
     def put(self, data, explicit_hash_key=None, partition_key=None):
         self.queue.put((data, explicit_hash_key, partition_key))
+
+    def shutdown(self):
+        self.alive = False
+        self.async_producer.process.terminate()

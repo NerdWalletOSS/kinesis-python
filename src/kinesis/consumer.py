@@ -24,6 +24,7 @@ class ShardReader(SubprocessLoop):
     # this follow these best practices: http://docs.aws.amazon.com/streams/latest/dev/kinesis-low-latency.html
     # this can be influeced per-reader instance via the sleep_time arg
     DEFAULT_SLEEP_TIME = 1.0
+    TERMINATE_ON_SHUTDOWN = True
 
     def __init__(self, shard_id, shard_iter, record_queue, error_queue, boto3_session=None, sleep_time=None):
         self.shard_id = shard_id
@@ -84,10 +85,14 @@ class KinesisConsumer(object):
     """
     LOCK_DURATION = 30
 
-    def __init__(self, stream_name, boto3_session=None, state=None, reader_sleep_time=None):
+    def __init__(self, stream_name, boto3_session=None, state=None, reader_sleep_time=None, max_queue_size=None):
         self.stream_name = stream_name
         self.error_queue = multiprocessing.Queue()
-        self.record_queue = multiprocessing.Queue()
+        self.max_queue_size = max_queue_size
+        if self.max_queue_size:
+            self.record_queue = multiprocessing.Queue(maxsize=self.max_queue_size)
+        else:
+            self.record_queue = multiprocessing.Queue()
 
         self.boto3_session = boto3_session or boto3.Session()
         self.kinesis_client = self.boto3_session.client('kinesis')
@@ -104,10 +109,16 @@ class KinesisConsumer(object):
         return '_'.join([self.stream_name, shard_id])
 
     def shutdown_shard_reader(self, shard_id):
+        log.warning("Shutting down shard reader {0}".format(shard_id))
         try:
-            self.shards[shard_id].shutdown()
+            log.warning("Stopping subprocess for shard reader {0}".format(shard_id))
+            log.warning("Terminating shard reader {0}".format(self.shards[shard_id]))
+            self.shards[shard_id].process.terminate()
+            # self.shards[shard_id].shutdown()
             del self.shards[shard_id]
+            log.warning("Completed shutdown of shard reader {0}".format(shard_id))
         except KeyError:
+            log.warning("Got KeyError while trying to shutdown shard reader {0}".format(shard_id))
             pass
 
     def setup_shards(self):
@@ -127,7 +138,7 @@ class KinesisConsumer(object):
                 if not shard_locked:
                     # if we currently have a shard reader running we stop it
                     if shard_data['ShardId'] in self.shards:
-                        log.warn("We lost our lock on shard %s, stopping shard reader", shard_data['ShardId'])
+                        log.warning("We lost our lock on shard %s, stopping shard reader", shard_data['ShardId'])
                         self.shutdown_shard_reader(shard_data['ShardId'])
 
                     # since we failed to lock the shard we just continue to the next one
@@ -176,12 +187,13 @@ class KinesisConsumer(object):
             self.setup_shards()
 
     def shutdown(self):
+        self.run = False
         for shard_id in self.shards:
             log.info("Shutting down shard reader for %s", shard_id)
-            self.shards[shard_id].shutdown()
+            self.shards[shard_id].process.terminate()
+            # self.shards[shard_id].shutdown()
         self.stream_data = None
         self.shards = {}
-        self.run = False
 
     def __iter__(self):
         try:
@@ -210,9 +222,9 @@ class KinesisConsumer(object):
                             except AttributeError:
                                 # no self.state
                                 pass
-                            except Exception:
-                                log.exception("Unhandled exception check pointing records from %s at %s",
-                                              shard_id, item['SequenceNumber'])
+                            except Exception as exc:
+                                log.exception("Unhandled exception check pointing records from {0} at {1} Exception: {2}".format(
+                                              shard_id, item['SequenceNumber'], exc))
                                 self.shutdown_shard_reader(shard_id)
                                 break
 
