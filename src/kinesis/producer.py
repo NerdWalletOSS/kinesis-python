@@ -164,19 +164,30 @@ class KinesisProducer(object):
     """Produce to Kinesis streams via an AsyncProducer"""
     def __init__(self, stream_name, buffer_time=0.5, max_count=None, max_size=None, boto3_session=None,
                  max_queue_size=None):
+        self.stream_name = stream_name
+        self.buffer_time = buffer_time
+        self.max_count = max_count
+        self.max_size = max_size
+        self.boto3_session = boto3_session
         self.max_queue_size = max_queue_size
+        self.max_queue_size = max_queue_size
+
+        # Setup
+        self._setup_producer()
+
+    def _setup_producer(self):
         if self.max_queue_size:
             self.queue = multiprocessing.Queue(maxsize=self.max_queue_size)
         else:
             self.queue = multiprocessing.Queue()
 
-        self.async_producer = AsyncProducer(stream_name, buffer_time, self.queue, max_count=max_count,
-                                            max_size=max_size, boto3_session=boto3_session)
+        self.async_producer = AsyncProducer(self.stream_name, self.buffer_time, self.queue, max_count=self.max_count,
+                                            max_size=self.max_size, boto3_session=self.boto3_session)
 
     def put(self, data, explicit_hash_key=None, partition_key=None):
         if not self.async_producer.alive:
-            self.async_producer.shutdown()
-            self.__init__()
+            # self.async_producer.shutdown()
+            self._setup_producer()
         try:
             self.queue.put((data, explicit_hash_key, partition_key))
         except Exception as exc:
