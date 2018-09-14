@@ -50,8 +50,9 @@ def sizeof(obj, seen=None):
 class AsyncProducer(SubprocessLoop):
     """Async accumulator and producer based on a multiprocessing Queue"""
     # Tell our subprocess loop that we don't want to terminate on shutdown since we want to drain our queue first
-    TERMINATE_ON_SHUTDOWN = False
-    # TERMINATE_ON_SHUTDOWN = True
+    # TERMINATE_ON_SHUTDOWN = False
+    TERMINATE_ON_SHUTDOWN = True
+    WAIT_FOR_CHILD = True
 
     # Max size & count
     # Per: https://docs.aws.amazon.com/streams/latest/dev/service-sizes-and-limits.html
@@ -71,6 +72,7 @@ class AsyncProducer(SubprocessLoop):
         self.alive = True
         self.max_count = max_count or self.MAX_COUNT
         self.max_size = max_size or self.MAX_SIZE
+        self.terminate = False
 
         if boto3_session is None:
             boto3_session = boto3.Session()
@@ -92,6 +94,8 @@ class AsyncProducer(SubprocessLoop):
                 log.debug("Fetching from queue with timeout: %s", queue_timeout)
                 data, explicit_hash_key, partition_key = self.queue.get(block=True, timeout=queue_timeout)
             except Queue.Empty:
+                continue
+            except EOFError:
                 continue
             except Exception as exc:
                 log.exception("UNHANDLED EXCEPTION {0}".format(exc))
@@ -131,6 +135,7 @@ class AsyncProducer(SubprocessLoop):
     def end(self):
         # At the end of our loop (before we exit, i.e. via a signal) we change our buffer time to 250ms and then re-call
         # the loop() method to ensure that we've drained any remaining items from our queue before we exit.
+        log.debug("Ending producer...".format(len(self.records)))
         while len(self.records) > 0:
             log.debug("Ending producer, flushing {0} records...".format(len(self.records)))
             self.buffer_time = 0.25

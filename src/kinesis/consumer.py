@@ -133,7 +133,17 @@ class KinesisConsumer(object):
 
         setup_again = False
         # Let's add some randomness into shard locking so one worker does not take over completely...
-        for shard_data in random.shuffle(self.stream_data['StreamDescription']['Shards']):
+        stream_data = list(self.stream_data['StreamDescription']['Shards'])
+        if stream_data:
+            random.shuffle(stream_data)
+        for shard_data in stream_data:
+        # for shard_data in self.stream_data['StreamDescription']['Shards']:
+            # Let's add some randomness into shard locking so one worker does not take over completely...
+            # if len(self.shards) > 0:
+            #     # This will sleep less than a second if we already have one shard we are reading from to give other
+            #     # workers a better change of spreading out.
+            #     time.sleep(random.random())
+
             # see if we can get a lock on this shard id
             try:
                 shard_locked = self.state.lock_shard(self.state_shard_id(shard_data['ShardId']), self.LOCK_DURATION)
@@ -152,11 +162,6 @@ class KinesisConsumer(object):
 
             # we should try to start a shard reader if the shard id specified isn't in our shards
             if shard_data['ShardId'] not in self.shards:
-                # Let's add some randomness into shard locking so one worker does not take over completely...
-                if len(self.shards) > 0:
-                    # This will sleep less than a second if we already have one shard we are reading from to give other
-                    # workers a better change of spreading out.
-                    time.sleep(random.random())
 
                 log.info("Shard reader for %s does not exist, creating...", shard_data['ShardId'])
                 try:
@@ -220,6 +225,8 @@ class KinesisConsumer(object):
                         shard_id, resp = self.record_queue.get(block=True, timeout=0.25)
                     except Queue.Empty:
                         pass
+                    except EOFError:
+                        pass
                     except Exception as exc:
                         log.exception("UNHANDLED EXCEPTION {0}".format(exc))
                         log.error("Shutting down...")
@@ -252,6 +259,8 @@ class KinesisConsumer(object):
                             log.error("Error received from shard reader %s", shard_id)
                             self.shutdown_shard_reader(shard_id)
                     except Queue.Empty:
+                        pass
+                    except EOFError:
                         pass
 
                     if shard_id is not None:
