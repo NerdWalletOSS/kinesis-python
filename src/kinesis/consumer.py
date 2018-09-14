@@ -6,6 +6,7 @@ except ImportError:
 import logging
 import multiprocessing
 import time
+import random
 
 import boto3
 
@@ -131,7 +132,8 @@ class KinesisConsumer(object):
         # XXX TODO: handle StreamStatus -- our stream might not be ready, or might be deleting
 
         setup_again = False
-        for shard_data in self.stream_data['StreamDescription']['Shards']:
+        # Let's add some randomness into shard locking so one worker does not take over completely...
+        for shard_data in random.shuffle(self.stream_data['StreamDescription']['Shards']):
             # see if we can get a lock on this shard id
             try:
                 shard_locked = self.state.lock_shard(self.state_shard_id(shard_data['ShardId']), self.LOCK_DURATION)
@@ -150,6 +152,12 @@ class KinesisConsumer(object):
 
             # we should try to start a shard reader if the shard id specified isn't in our shards
             if shard_data['ShardId'] not in self.shards:
+                # Let's add some randomness into shard locking so one worker does not take over completely...
+                if len(self.shards) > 0:
+                    # This will sleep less than a second if we already have one shard we are reading from to give other
+                    # workers a better change of spreading out.
+                    time.sleep(random.random())
+
                 log.info("Shard reader for %s does not exist, creating...", shard_data['ShardId'])
                 try:
                     iterator_args = self.state.get_iterator_args(self.state_shard_id(shard_data['ShardId']))
