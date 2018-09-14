@@ -89,6 +89,7 @@ class KinesisConsumer(object):
     which are returned via the main iterator.
     """
     LOCK_DURATION = 30
+    WAIT_FOR_CHILD = True
 
     def __init__(self, stream_name, boto3_session=None, state=None, reader_sleep_time=None, max_queue_size=None):
         self.stream_name = stream_name
@@ -118,8 +119,8 @@ class KinesisConsumer(object):
         try:
             log.warning("Stopping subprocess for shard reader {0}".format(shard_id))
             log.warning("Shutting down shard reader {0}".format(self.shards[shard_id]))
-            # self.shards[shard_id].process.terminate()
-            self.shards[shard_id].shutdown()
+            self.shards[shard_id].process.terminate()
+            # self.shards[shard_id].shutdown()
             del self.shards[shard_id]
             log.warning("Completed shutdown of shard reader {0}".format(shard_id))
         except KeyError:
@@ -133,17 +134,10 @@ class KinesisConsumer(object):
 
         setup_again = False
         # Let's add some randomness into shard locking so one worker does not take over completely...
-        stream_data = list(self.stream_data['StreamDescription']['Shards'])
-        if stream_data:
-            random.shuffle(stream_data)
-        for shard_data in stream_data:
-        # for shard_data in self.stream_data['StreamDescription']['Shards']:
-            # Let's add some randomness into shard locking so one worker does not take over completely...
-            # if len(self.shards) > 0:
-            #     # This will sleep less than a second if we already have one shard we are reading from to give other
-            #     # workers a better change of spreading out.
-            #     time.sleep(random.random())
-
+        stream_shard_data = list(self.stream_data['StreamDescription']['Shards'])
+        if stream_shard_data:
+            random.shuffle(stream_shard_data)
+        for shard_data in stream_shard_data:
             # see if we can get a lock on this shard id
             try:
                 shard_locked = self.state.lock_shard(self.state_shard_id(shard_data['ShardId']), self.LOCK_DURATION)
@@ -266,6 +260,9 @@ class KinesisConsumer(object):
                     if shard_id is not None:
                         # we encountered an error from a shard reader, break out of the inner loop to setup the shards
                         break
+                # Don't be greedy, allow other waiting workers a shot at the extra shards.
+                if len(self.shards) > 1:
+                    time.sleep(1)
         except (KeyboardInterrupt, SystemExit):
             self.run = False
         finally:
