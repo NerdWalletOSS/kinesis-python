@@ -97,10 +97,13 @@ class AsyncProducer(SubprocessLoop):
                 continue
             except EOFError:
                 continue
+            except UnicodeDecodeError as exc:
+                log.exception("UnicodeDecodeError Exception: {0}".format(exc))
+                continue
             except Exception as exc:
                 log.exception("UNHANDLED EXCEPTION {0}".format(exc))
                 log.error("Shutting down...")
-                self.alive = False
+                # self.alive = False
                 loop_status = False
                 break
             else:
