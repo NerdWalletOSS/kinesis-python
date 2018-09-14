@@ -90,6 +90,10 @@ class KinesisConsumer(object):
     """
     LOCK_DURATION = 30
     WAIT_FOR_CHILD = True
+    # Set this to the number of seconds to sleep so that other workers can pick up shards after our lock runs out.
+    # This helps a lot when you have a docker swarm of consumers on the same stream so that one container does not
+    # bottleneck the whole consumption.  Set to zero to ignore.
+    GREEDY_GRACE_TIME = 1
 
     def __init__(self, stream_name, boto3_session=None, state=None, reader_sleep_time=None, max_queue_size=None):
         self.stream_name = stream_name
@@ -261,8 +265,8 @@ class KinesisConsumer(object):
                         # we encountered an error from a shard reader, break out of the inner loop to setup the shards
                         break
                 # Don't be greedy, allow other waiting workers a shot at the extra shards.
-                if len(self.shards) > 1:
-                    time.sleep(1)
+                if len(self.shards) > 1 and self.GREEDY_GRACE_TIME > 0:
+                    time.sleep(self.GREEDY_GRACE_TIME)
         except (KeyboardInterrupt, SystemExit):
             self.run = False
         finally:
