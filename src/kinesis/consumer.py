@@ -124,7 +124,8 @@ class KinesisConsumer(object):
             log.warning("Stopping subprocess for shard reader {0}".format(shard_id))
             log.warning("Shutting down shard reader {0}".format(self.shards[shard_id]))
             self.shards[shard_id].process.terminate()
-            self.shards[shard_id].shutdown()
+            # The line below won't kill the process for some reason... so we terminate above.
+            # self.shards[shard_id].shutdown()
             del self.shards[shard_id]
             log.warning("Completed shutdown of shard reader {0}".format(shard_id))
         except KeyError:
