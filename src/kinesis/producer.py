@@ -86,54 +86,59 @@ class AsyncProducer(SubprocessLoop):
         timer_start = time.time()
         loop_status = 0
 
-        while self.alive and (time.time() - timer_start) < self.buffer_time:
-            # we want our queue to block up until the end of this buffer cycle, so we set out timeout to the amount
-            # remaining in buffer_time by substracting how long we spent so far during this cycle
-            queue_timeout = self.buffer_time - (time.time() - timer_start)
-            try:
-                log.debug("Fetching from queue with timeout: %s", queue_timeout)
-                data, explicit_hash_key, partition_key = self.queue.get(block=True, timeout=queue_timeout)
-            except Queue.Empty:
-                continue
-            except EOFError:
-                continue
-            except UnicodeDecodeError as exc:
-                # log.exception("UnicodeDecodeError Exception: {0}".format(exc))
-                log.error("UnicodeDecodeError Exception: {0}".format(exc))
-                loop_status = False
-                break
-            except Exception as exc:
-                log.exception("UNHANDLED EXCEPTION {0}".format(exc))
-                log.error("Shutting down...")
-                # self.alive = False
-                loop_status = False
-                break
-            else:
-                record = {
-                    'Data': data,
-                    'PartitionKey': partition_key or '{0}{1}'.format(time.clock(), time.time()),
-                }
-                if explicit_hash_key is not None:
-                    record['ExplicitHashKey'] = explicit_hash_key
+        try:
+            while self.alive and (time.time() - timer_start) < self.buffer_time:
+                # we want our queue to block up until the end of this buffer cycle, so we set out timeout to the amount
+                # remaining in buffer_time by substracting how long we spent so far during this cycle
+                queue_timeout = self.buffer_time - (time.time() - timer_start)
+                try:
+                    log.debug("Fetching from queue with timeout: %s", queue_timeout)
+                    data, explicit_hash_key, partition_key = self.queue.get(block=True, timeout=queue_timeout)
+                except Queue.Empty:
+                    continue
+                except EOFError:
+                    continue
+                except UnicodeDecodeError as exc:
+                    # log.exception("UnicodeDecodeError Exception: {0}".format(exc))
+                    log.error("UnicodeDecodeError Exception: {0}".format(exc))
+                    loop_status = False
+                    break
+                except Exception as exc:
+                    log.exception("UNHANDLED EXCEPTION {0}".format(exc))
+                    log.error("Shutting down...")
+                    # self.alive = False
+                    loop_status = False
+                    break
+                else:
+                    record = {
+                        'Data': data,
+                        'PartitionKey': partition_key or '{0}{1}'.format(time.clock(), time.time()),
+                    }
+                    if explicit_hash_key is not None:
+                        record['ExplicitHashKey'] = explicit_hash_key
 
-                # Get the size of any leftover records
-                for i in self.records:
-                    records_size += sizeof(i)
+                    # Get the size of any leftover records
+                    for i in self.records:
+                        records_size += sizeof(i)
+                        records_count += 1
+
+                    records_size += sizeof(record)
+                    if records_size >= self.max_size:
+                        log.debug("Records exceed MAX_SIZE (%s)!  Adding to next_records: %s", self.max_size, record)
+                        self.next_records = [record]
+                        break
+
+                    log.debug("Adding to records (%d bytes): %s", records_size, record)
+                    self.records.append(record)
+
                     records_count += 1
-
-                records_size += sizeof(record)
-                if records_size >= self.max_size:
-                    log.debug("Records exceed MAX_SIZE (%s)!  Adding to next_records: %s", self.max_size, record)
-                    self.next_records = [record]
-                    break
-
-                log.debug("Adding to records (%d bytes): %s", records_size, record)
-                self.records.append(record)
-
-                records_count += 1
-                if records_count == self.max_count:
-                    log.debug("Records have reached MAX_COUNT (%s)!  Flushing records.", self.max_count)
-                    break
+                    if records_count == self.max_count:
+                        log.debug("Records have reached MAX_COUNT (%s)!  Flushing records.", self.max_count)
+                        break
+        except OSError as exc:
+            log.error("OSError Exception: {0}".format(exc))
+            # This is a memory problem, most likely.
+            return False
         self.flush_records()
         return loop_status
 

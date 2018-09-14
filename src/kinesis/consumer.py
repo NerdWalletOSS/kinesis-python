@@ -65,14 +65,22 @@ class ShardReader(SubprocessLoop):
             if not resp['NextShardIterator']:
                 # the shard has been closed
                 log.info("Our shard has been closed, exiting")
+                self.error_queue.put(self.shard_id)
                 return False
 
             self.shard_iter = resp['NextShardIterator']
             try:
                 self.record_queue.put((self.shard_id, resp))
+            except OSError as exc:
+                log.error("OSError Exception: {0}".format(exc))
+                # This is a memory problem, most likely.
+                log.error("Shutting down...")
+                self.error_queue.put(self.shard_id)
+                return False
             except Exception as exc:
                 log.exception("UNHANDLED EXCEPTION {0}".format(exc))
                 log.error("Shutting down...")
+                self.error_queue.put(self.shard_id)
                 loop_status = False
             self.retries = 0
         return loop_status
@@ -222,6 +230,12 @@ class KinesisConsumer(object):
                 while self.run and (time.time() - last_setup_check) < lock_duration_check:
                     try:
                         shard_id, resp = self.record_queue.get(block=True, timeout=0.25)
+                    except OSError as exc:
+                        log.error("OSError Exception: {0}".format(exc))
+                        # This is a memory problem, most likely.
+                        log.error("Shutting down...")
+                        self.run = False
+                        break
                     except Queue.Empty:
                         pass
                     except EOFError:
