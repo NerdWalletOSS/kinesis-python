@@ -72,7 +72,6 @@ class AsyncProducer(SubprocessLoop):
         self.alive = True
         self.max_count = max_count or self.MAX_COUNT
         self.max_size = max_size or self.MAX_SIZE
-        self.terminate = False
 
         if boto3_session is None:
             boto3_session = boto3.Session()
@@ -154,7 +153,6 @@ class AsyncProducer(SubprocessLoop):
             self.loop()
         self.alive = False
         log.info("Producer Ended...")
-        # self.terminate()
 
     def flush_records(self):
         if self.records:
@@ -180,15 +178,24 @@ class KinesisProducer(object):
         self.boto3_session = boto3_session
         self.max_queue_size = max_queue_size
         self.max_queue_size = max_queue_size
+        self.queue = None
 
         # Setup
         self._setup_producer()
 
     def _setup_producer(self):
-        if self.max_queue_size:
-            self.queue = multiprocessing.Queue(maxsize=self.max_queue_size)
-        else:
-            self.queue = multiprocessing.Queue()
+        # Don't do anything if we have a producer...
+        if hasattr(self, "async_producer") and self.async_producer.process.is_alive():
+            return
+
+        if not self.queue:
+            if self.max_queue_size:
+                self.queue = multiprocessing.Queue(maxsize=self.max_queue_size)
+            else:
+                self.queue = multiprocessing.Queue()
+
+        if hasattr(self, "async_producer"):
+            del self.async_producer
 
         self.async_producer = AsyncProducer(self.stream_name, self.buffer_time, self.queue, max_count=self.max_count,
                                             max_size=self.max_size, boto3_session=self.boto3_session)
@@ -208,3 +215,18 @@ class KinesisProducer(object):
     def shutdown(self):
         log.debug("Shutting down the producer...")
         self.async_producer.shutdown()
+        max_retries = 30
+
+        # If our process is dead, it's dead.
+        if self.async_producer.process.is_alive() is False:
+            log.debug("Producer process is dead.")
+            return
+        else:
+            log.debug("Waiting for queue to empty...")
+            while self.async_producer.process.is_alive() and not self.queue.empty() and max_retries > 0:
+                i = 0
+                max_retries -= 1
+                log.debug("Waiting for queue to empty, sleeping one second, retry {0}...".format(i))
+                time.sleep(1)
+            log.debug("Queue is empty, terminating process...")
+            self.async_producer.process.kill()

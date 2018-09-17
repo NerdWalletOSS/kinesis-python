@@ -96,17 +96,18 @@ class KinesisConsumer(object):
     A process is started for each shard we are to consume from.  Each process passes messages back up to the parent,
     which are returned via the main iterator.
     """
-    LOCK_DURATION = 30
     WAIT_FOR_CHILD = True
     # Set this to the number of seconds to sleep so that other workers can pick up shards after our lock runs out.
     # This helps a lot when you have a docker swarm of consumers on the same stream so that one container does not
     # bottleneck the whole consumption.  Set to zero to ignore.
     GREEDY_GRACE_TIME = 0.1
 
-    def __init__(self, stream_name, boto3_session=None, state=None, reader_sleep_time=None, max_queue_size=None):
+    def __init__(self, stream_name, boto3_session=None, state=None, reader_sleep_time=None,
+                 max_queue_size=None, lock_duration=30):
         self.stream_name = stream_name
         self.error_queue = multiprocessing.Queue()
         self.max_queue_size = max_queue_size
+        self.lock_duration = lock_duration
         if self.max_queue_size:
             self.record_queue = multiprocessing.Queue(maxsize=self.max_queue_size)
         else:
@@ -127,17 +128,21 @@ class KinesisConsumer(object):
         return '_'.join([self.stream_name, shard_id])
 
     def shutdown_shard_reader(self, shard_id):
-        log.warning("Shutting down shard reader {0}".format(shard_id))
+        log.debug("Shutting down shard reader {0}".format(shard_id))
         try:
-            log.warning("Stopping subprocess for shard reader {0}".format(shard_id))
-            log.warning("Shutting down shard reader {0}".format(self.shards[shard_id]))
-            self.shards[shard_id].process.terminate()
-            # The line below won't kill the process for some reason... so we terminate above.
-            # self.shards[shard_id].shutdown()
+            log.debug("Stopping subprocess for shard reader {0}".format(shard_id))
+            log.debug("Shutting down shard reader {0}".format(self.shards[shard_id]))
+            self.shards[shard_id].process.kill()
+            while self.shards[shard_id].process.is_alive():
+                log.debug("Process is still alive, trying to shutdown... {0}".format(shard_id))
+                # The line below won't kill the process for some reason... so we terminate above.
+                # self.shards[shard_id].shutdown()
+                self.shards[shard_id].process.kill()
+                time.sleep(0.5)
             del self.shards[shard_id]
-            log.warning("Completed shutdown of shard reader {0}".format(shard_id))
+            log.debug("Completed shutdown of shard reader {0}".format(shard_id))
         except KeyError:
-            log.warning("Got KeyError while trying to shutdown shard reader {0}".format(shard_id))
+            log.debug("Got KeyError while trying to shutdown shard reader {0}".format(shard_id))
             pass
 
     def setup_shards(self):
@@ -153,7 +158,7 @@ class KinesisConsumer(object):
         for shard_data in stream_shard_data:
             # see if we can get a lock on this shard id
             try:
-                shard_locked = self.state.lock_shard(self.state_shard_id(shard_data['ShardId']), self.LOCK_DURATION)
+                shard_locked = self.state.lock_shard(self.state_shard_id(shard_data['ShardId']), self.lock_duration)
             except AttributeError:
                 # no self.state
                 pass
@@ -161,7 +166,7 @@ class KinesisConsumer(object):
                 if not shard_locked:
                     # if we currently have a shard reader running we stop it
                     if shard_data['ShardId'] in self.shards:
-                        log.warning("We lost our lock on shard %s, stopping shard reader", shard_data['ShardId'])
+                        log.debug("We lost our lock on shard %s, stopping shard reader", shard_data['ShardId'])
                         self.shutdown_shard_reader(shard_data['ShardId'])
 
                     # since we failed to lock the shard we just continue to the next one
@@ -169,7 +174,6 @@ class KinesisConsumer(object):
 
             # we should try to start a shard reader if the shard id specified isn't in our shards
             if shard_data['ShardId'] not in self.shards:
-
                 log.info("Shard reader for %s does not exist, creating...", shard_data['ShardId'])
                 try:
                     iterator_args = self.state.get_iterator_args(self.state_shard_id(shard_data['ShardId']))
@@ -212,24 +216,27 @@ class KinesisConsumer(object):
 
     def shutdown(self):
         self.run = False
-        for shard_id in self.shards:
+        to_shut_down = self.shards.copy()
+        for shard_id in to_shut_down:
             log.info("Shutting down shard reader for %s", shard_id)
-            # self.shards[shard_id].process.terminate()
-            self.shards[shard_id].shutdown()
+            self.shutdown_shard_reader(shard_id)
         self.stream_data = None
         self.shards = {}
+        log.info("All shards shutdown...")
 
     def __iter__(self):
         try:
             # use lock duration - 1 here since we want to renew our lock before it expires
-            lock_duration_check = self.LOCK_DURATION - 1
+            lock_duration_check = self.lock_duration - 1
             while self.run:
                 last_setup_check = time.time()
                 self.setup_shards()
 
                 while self.run and (time.time() - last_setup_check) < lock_duration_check:
                     try:
-                        shard_id, resp = self.record_queue.get(block=True, timeout=0.25)
+                        queue_timeout = 0.25
+                        log.debug("Fetching from queue with timeout: %s", queue_timeout)
+                        shard_id, resp = self.record_queue.get(block=True, timeout=queue_timeout)
                     except OSError as exc:
                         log.error("OSError Exception: {0}".format(exc))
                         # This is a memory problem, most likely.
