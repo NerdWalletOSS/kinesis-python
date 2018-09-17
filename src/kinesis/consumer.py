@@ -101,7 +101,7 @@ class KinesisConsumer(object):
     # Set this to the number of seconds to sleep so that other workers can pick up shards after our lock runs out.
     # This helps a lot when you have a docker swarm of consumers on the same stream so that one container does not
     # bottleneck the whole consumption.  Set to zero to ignore.
-    GREEDY_GRACE_TIME = 1
+    GREEDY_GRACE_TIME = 0.1
 
     def __init__(self, stream_name, boto3_session=None, state=None, reader_sleep_time=None, max_queue_size=None):
         self.stream_name = stream_name
@@ -251,7 +251,7 @@ class KinesisConsumer(object):
                             if not self.run:
                                 break
 
-                            log.debug(item)
+                            # log.debug(item)
                             yield item
 
                             try:

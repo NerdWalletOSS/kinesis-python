@@ -124,11 +124,13 @@ class AsyncProducer(SubprocessLoop):
 
                     records_size += sizeof(record)
                     if records_size >= self.max_size:
-                        log.debug("Records exceed MAX_SIZE (%s)!  Adding to next_records: %s", self.max_size, record)
+                        # log.debug("Records exceed MAX_SIZE (%s)!  Adding to next_records: %s", self.max_size, record)
+                        log.debug("Records exceed MAX_SIZE (%s)!", self.max_size)
                         self.next_records = [record]
                         break
 
-                    log.debug("Adding to records (%d bytes): %s", records_size, record)
+                    # log.debug("Adding to records (%d bytes): %s", records_size, record)
+                    log.debug("Adding to records (%d bytes)", records_size)
                     self.records.append(record)
 
                     records_count += 1
@@ -145,12 +147,14 @@ class AsyncProducer(SubprocessLoop):
     def end(self):
         # At the end of our loop (before we exit, i.e. via a signal) we change our buffer time to 250ms and then re-call
         # the loop() method to ensure that we've drained any remaining items from our queue before we exit.
-        log.debug("Ending producer...".format(len(self.records)))
+        log.info("Ending producer...")
         while len(self.records) > 0:
             log.debug("Ending producer, flushing {0} records...".format(len(self.records)))
             self.buffer_time = 0.25
             self.loop()
         self.alive = False
+        log.info("Producer Ended...")
+        # self.terminate()
 
     def flush_records(self):
         if self.records:
@@ -190,7 +194,7 @@ class KinesisProducer(object):
                                             max_size=self.max_size, boto3_session=self.boto3_session)
 
     def put(self, data, explicit_hash_key=None, partition_key=None):
-        if not self.async_producer.alive:
+        if not self.async_producer.process.is_alive():
             # self.async_producer.shutdown()
             self._setup_producer()
         try:
