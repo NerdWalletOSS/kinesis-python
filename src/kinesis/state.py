@@ -33,10 +33,10 @@ class DynamoDB(object):
 
     def checkpoint(self, shard_id, seq):
         fqdn = socket.getfqdn()
-        retries = 10
-
-        while retries > 0:
-            retries -= 1
+        retries = 0
+        while True:
+            if retries > 10:
+                return False
             try:
                 # update the seq attr in our item
                 # ensure our fqdn still holds the lock and the new seq is bigger than what's already there
@@ -49,7 +49,7 @@ class DynamoDB(object):
                         ':seq': seq,
                     }
                 )
-                break
+                return True
             except ClientError as exc:
                 if exc.response['Error']['Code'] in RETRY_EXCEPTIONS:
                     log.warning("Throttled while trying to read lock table in Dynamo: %s", exc)
@@ -57,6 +57,8 @@ class DynamoDB(object):
             except Exception as exc:
                 log.exception("Unhandled exception {0}".format(exc))
                 time.sleep(1)
+            retries += 1
+        return False
 
     def lock_shard(self, shard_id, expires):
         dynamo_key = {'shard': shard_id}
