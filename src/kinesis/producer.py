@@ -107,11 +107,11 @@ class KinesisProducer(object):
                         data, explicit_hash_key, partition_key = self.queue.get(block=True, timeout=queue_timeout)
                     except queue.Empty:
                         pass
-                    except EOFError:
-                        pass
+                    # except EOFError:
+                    #     pass
                     except UnicodeDecodeError as exc:
-                        # log.exception("UnicodeDecodeError Exception: {0}".format(exc))
-                        log.error("UnicodeDecodeError Exception: {0}".format(exc))
+                        log.exception("UnicodeDecodeError Exception: {0}".format(exc))
+                        log.error("Ignoring UnicodeDecodeError Exception: {0}".format(exc))
                         pass
                     except Exception as exc:
                         log.exception("UNHANDLED EXCEPTION {0}".format(exc))
@@ -148,7 +148,7 @@ class KinesisProducer(object):
                             log.debug("Records have reached MAX_COUNT (%s)!  Flushing records.", self.max_count)
                             break
             except OSError as exc:
-                log.error("OSError Exception: {0}".format(exc))
+                log.exception("OSError Exception: {0}".format(exc))
                 # This is a memory problem, most likely.
                 return False
             log.debug("Attempting to flush {0} records...".format(len(self.records)))

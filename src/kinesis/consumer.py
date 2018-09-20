@@ -94,33 +94,7 @@ class KinesisConsumer(object):
                 self.shutdown()
                 return None
             else:
-                log.debug("Processing item from consumer record queue.")
-                state_shard_id = self.state_shard_id(shard_id)
                 log.debug("Got item from from queue for shard {0}".format(shard_id))
-                try:
-                    log.debug("Attempting to checkpoint item for shard {0}...".format(shard_id))
-                    checkpoint_status = self.state.checkpoint(state_shard_id, item['SequenceNumber'])
-                except AttributeError:
-                    # no self.state
-                    log.debug("No state table...")
-                    pass
-                except Exception as exc:
-                    log.exception("Unhandled exception check pointing records from {0} at {1} Exception: {2}".format(
-                        shard_id, item['SequenceNumber'], exc))
-                    log.warning("Restarting shards...")
-                    if self.restart_queue.empty():
-                        self.restart_queue.put("restart", block=False)
-                    try_again = True
-                else:
-                    if checkpoint_status:
-                        log.debug("Checkpointed item...")
-                        try_again = False
-                    else:
-                        log.debug("Could not checkpoint item, ignoring for shard {0}...".format(shard_id))
-                        log.debug("Restarting shards...")
-                        if self.restart_queue.empty():
-                            self.restart_queue.put("restart", block=False)
-                        try_again = True
         log.debug("Returning item...")
         return item
 
@@ -207,9 +181,11 @@ class KinesisConsumer(object):
 
                     self.shards[shard_data['ShardId']] = Process(target=self._run_reader,
                                                                  args=(shard_data['ShardId'],
-                                                                       shard_iter['ShardIterator'],
-                                                                       self.record_queue))
+                                                                       shard_iter['ShardIterator']))
                     self.shards[shard_data['ShardId']].start()
+                    # let things stabilize
+                    log.debug("Sleeping to let processes stabilize...")
+                    time.sleep(1)
                 else:
                     log.debug(
                         "Checking shard reader %s process at pid %d",
@@ -273,7 +249,7 @@ class KinesisConsumer(object):
             self.manager_proc.join()
         log.info("Shard manager has been shutdown.")
 
-    def _run_reader(self, shard_id, shard_iter, record_queue):
+    def _run_reader(self, shard_id, shard_iter):
         curr_iter = shard_iter
         retries = 0
         while self.run:
@@ -301,21 +277,64 @@ class KinesisConsumer(object):
                 queue_add_count = 0
                 for item in resp['Records']:
                     try:
-                        record_queue.put((shard_id, item))
+                        self.record_queue.put((shard_id, item))
                         # log.debug("Put record on record queue for shard {0} {1} {2}.".format(shard_id,
                         #                                                                      record_queue.qsize(),
                         #                                                                      record_queue))
                         queue_add_count += 1
+                    except ConnectionRefusedError as exc:
+                        log.exception("ConnectionRefusedError {0}".format(exc))
+                        log.debug("Restarting shards...")
+                        if self.restart_queue.empty():
+                            self.restart_queue.put("restart", block=False)
+                        return False
                     except OSError as exc:
                         log.exception("OSError Exception: {0}".format(exc))
                         # This is a memory problem, most likely.
-                        log.error("Shutting down...")
+                        log.debug("Restarting shards...")
+                        if self.restart_queue.empty():
+                            self.restart_queue.put("restart", block=False)
+                        return False
+                    except EOFError as exc:
+                        log.exception("EOFError Exception: {0}".format(exc))
+                        log.debug("Restarting shards...")
+                        if self.restart_queue.empty():
+                            self.restart_queue.put("restart", block=False)
                         return False
                     except Exception as exc:
                         log.exception("UNHANDLED EXCEPTION {0}".format(exc))
-                        log.error("Shutting down...")
+                        log.debug("Restarting shards...")
+                        if self.restart_queue.empty():
+                            self.restart_queue.put("restart", block=False)
                         return False
+
                 log.debug("Put {0:,} records on the consumer queue.".format(queue_add_count))
+
+                last_item = resp['Records'][-1]
+
+                if len(resp['Records']) > 0:
+                    state_shard_id = self.state_shard_id(shard_id)
+                    try:
+                        log.debug("Attempting to checkpoint items for shard {0}...".format(shard_id))
+                        checkpoint_status = self.state.checkpoint(state_shard_id, last_item['SequenceNumber'])
+                    except AttributeError:
+                        # no self.state
+                        log.debug("No state table...")
+                        pass
+                    except Exception as exc:
+                        log.exception("Unhandled exception check pointing records from {0} at {1} Exception: {2}".format(
+                            shard_id, item['SequenceNumber'], exc))
+                        log.warning("Restarting shards...")
+                        if self.restart_queue.empty():
+                            self.restart_queue.put("restart", block=False)
+                    else:
+                        if checkpoint_status:
+                            log.debug("Checkpointed item...")
+                        else:
+                            log.debug("Could not checkpoint item, ignoring for shard {0}...".format(shard_id))
+                            log.debug("Restarting shards...")
+                            if self.restart_queue.empty():
+                                self.restart_queue.put("restart", block=False)
                 retries = 0
 
             if self.sleep_time:
