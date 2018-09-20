@@ -195,12 +195,12 @@ class KinesisProducer(object):
 
     def flush_records(self):
         if self.records:
-            log.info("Flushing %d records", len(self.records))
+            log.debug("Flushing %d records", len(self.records))
             self.client.put_records(
                 StreamName=self.stream_name,
                 Records=self.records
             )
             log.debug("Flushed %d records", len(self.records))
-            log.info("%d next records", len(self.next_records))
+            log.debug("%d next records", len(self.next_records))
         self.records = self.next_records
         self.next_records = []
