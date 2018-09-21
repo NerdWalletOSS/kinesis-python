@@ -310,9 +310,8 @@ class KinesisConsumer(object):
 
                 log.debug("Put {0:,} records on the consumer queue.".format(queue_add_count))
 
-                last_item = resp['Records'][-1]
-
                 if len(resp['Records']) > 0:
+                    last_item = resp['Records'][-1]
                     state_shard_id = self.state_shard_id(shard_id)
                     try:
                         log.debug("Attempting to checkpoint items for shard {0}...".format(shard_id))
