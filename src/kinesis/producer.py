@@ -58,8 +58,9 @@ class AsyncProducer(SubprocessLoop):
     # * The maximum size of a data blob (the data payload before base64-encoding) is up to 1 MB.
     # * Each shard can support up to 1,000 records per second for writes, up to a maximum total data write rate of 1 MB
     #   per second (including partition keys).
+    # * PutRecords supports up to 500 records in a single call
     MAX_SIZE = (2 ** 20)
-    MAX_COUNT = 1000
+    MAX_COUNT = 500
 
     def __init__(self, stream_name, buffer_time, queue, max_count=None, max_size=None, boto3_session=None):
         self.stream_name = stream_name
