@@ -1,9 +1,5 @@
 from __future__ import absolute_import
-try:
-    import six.moves.queue
-except ImportError:
-    # Python 3
-    import queue as Queue
+import six.moves.queue
 import logging
 import multiprocessing
 import time

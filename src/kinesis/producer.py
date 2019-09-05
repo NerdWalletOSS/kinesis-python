@@ -2,11 +2,7 @@ from __future__ import absolute_import
 import collections
 import logging
 import multiprocessing
-try:
-    import six.moves.queue
-except ImportError:
-    # Python 3
-    import queue as Queue
+import six.moves.queue
 import sys
 import time
 
