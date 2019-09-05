@@ -1,13 +1,12 @@
 from __future__ import absolute_import
-import six.moves.queue
+
 import logging
 import multiprocessing
 import time
 
 import boto3
-
+import six.moves.queue
 from botocore.exceptions import ClientError
-
 from offspring.process import SubprocessLoop
 
 from .exceptions import RETRY_EXCEPTIONS

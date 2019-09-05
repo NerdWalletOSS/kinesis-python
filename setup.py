@@ -1,5 +1,6 @@
 from __future__ import absolute_import
-from setuptools import setup, find_packages
+
+from setuptools import find_packages, setup
 
 with open('VERSION') as version_fd:
     version = version_fd.read().strip()
