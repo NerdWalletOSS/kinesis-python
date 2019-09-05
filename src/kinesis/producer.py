@@ -1,8 +1,9 @@
+from __future__ import absolute_import
 import collections
 import logging
 import multiprocessing
 try:
-    import Queue
+    import six.moves.queue
 except ImportError:
     # Python 3
     import queue as Queue
@@ -90,7 +91,7 @@ class AsyncProducer(SubprocessLoop):
             try:
                 log.debug("Fetching from queue with timeout: %s", queue_timeout)
                 data, explicit_hash_key, partition_key = self.queue.get(block=True, timeout=queue_timeout)
-            except Queue.Empty:
+            except six.moves.queue.Empty:
                 continue
 
             record = {

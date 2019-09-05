@@ -1,5 +1,6 @@
+from __future__ import absolute_import
 try:
-    import Queue
+    import six.moves.queue
 except ImportError:
     # Python 3
     import queue as Queue
@@ -194,7 +195,7 @@ class KinesisConsumer(object):
                 while self.run and (time.time() - last_setup_check) < lock_duration_check:
                     try:
                         shard_id, resp = self.record_queue.get(block=True, timeout=0.25)
-                    except Queue.Empty:
+                    except six.moves.queue.Empty:
                         pass
                     else:
                         state_shard_id = self.state_shard_id(shard_id)
@@ -222,7 +223,7 @@ class KinesisConsumer(object):
                             shard_id = self.error_queue.get_nowait()
                             log.error("Error received from shard reader %s", shard_id)
                             self.shutdown_shard_reader(shard_id)
-                    except Queue.Empty:
+                    except six.moves.queue.Empty:
                         pass
 
                     if shard_id is not None:

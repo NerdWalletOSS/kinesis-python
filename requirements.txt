@@ -5,4 +5,4 @@ jmespath==0.9.3           # via boto3, botocore
 offspring==0.0.3
 python-dateutil==2.6.1    # via botocore
 s3transfer==0.1.12        # via boto3
-six==1.11.0
+six==1.11.0               # via python-dateutil
