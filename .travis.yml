@@ -9,6 +9,7 @@ python:
   - 2.7
   - 3.5
   - 3.6
+  - 3.7
 
 install: false
 script:
@@ -25,5 +26,5 @@ deploy:
     secure: "Sn+HB7i8sdissJIR5oVtjRG3ek3SkEtVjE/+qbksglUBhCXPPErxtmO5yjPHO0rsux0SE+XkOdTKbiI7Hg+NkK54Slv8GQl5tn9qqi7FY0IoElXqfh/yu6sLk9JZ5aQyhHT6LPsJM9SqP/AjG/+/u00maY0eyNSUzjiEC2ND6djNdQfuViOTX2Co9ojXFN41m4YT6hGmresqfdNK5huIN2nQ4xX9xysohlsCDgCUP4vJ4qF/+aB/ozmJCz1p0HnAprbNgIMIJD9QpAwP3Brikh6YDzLHR6/Wxr/7RtaYrw4BNtTJOe5vzzIoQXSCv89w3dmwcBIyPzlz5+VgequcwLV21+qEJpK/RQL8yszup3aY4VrECzNfQej78x9uBZ7m9XFO1Un9XULDGPFDur4RCIoFsn3I85LSRJIm1IBTNmAnfucRjWvO/EriArlgVQNj8eom0M/8nTPCmU7wU7C36OvCKDb5dSzLlkKYlp3DmfoY39Rjfofn/02XQT/z0GL8a4CkxiU1jnXI+uA+nG0P3b3TudGjai/FVa9qp0nZvgNEBW7syI2XQE8wfkIIN2TLJATzBD3oszeQU4J2SCN86YJVatnR1eQyKn42xfV7MbWf8Dr1A/SqVa8lDrUKaTP2hUzdK3956jfhUo6/pynK1NCMiyRJoJ5hgHVJT2m1sbw="
   on:
     branch: master
-    python: 3.6
+    python: 3.7
   distributions: "sdist bdist_wheel"
