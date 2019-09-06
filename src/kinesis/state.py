@@ -1,9 +1,10 @@
+from __future__ import absolute_import
+
 import logging
 import socket
 import time
 
 import boto3
-
 from botocore.exceptions import ClientError
 
 from .exceptions import RETRY_EXCEPTIONS

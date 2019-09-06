@@ -1,17 +1,14 @@
+from __future__ import absolute_import
+
 import collections
 import logging
 import multiprocessing
-try:
-    import Queue
-except ImportError:
-    # Python 3
-    import queue as Queue
 import sys
 import time
 
 import boto3
 import six
-
+import six.moves.queue
 from offspring.process import SubprocessLoop
 
 log = logging.getLogger(__name__)
@@ -90,7 +87,7 @@ class AsyncProducer(SubprocessLoop):
             try:
                 log.debug("Fetching from queue with timeout: %s", queue_timeout)
                 data, explicit_hash_key, partition_key = self.queue.get(block=True, timeout=queue_timeout)
-            except Queue.Empty:
+            except six.moves.queue.Empty:
                 continue
 
             record = {
@@ -137,6 +134,7 @@ class AsyncProducer(SubprocessLoop):
 
 class KinesisProducer(object):
     """Produce to Kinesis streams via an AsyncProducer"""
+
     def __init__(self, stream_name, buffer_time=0.5, max_count=None, max_size=None, boto3_session=None):
         self.queue = multiprocessing.Queue()
         self.async_producer = AsyncProducer(stream_name, buffer_time, self.queue, max_count=max_count,
