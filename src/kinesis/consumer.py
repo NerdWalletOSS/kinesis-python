@@ -4,6 +4,7 @@ import logging
 import multiprocessing
 import time
 
+import dateutil.parser
 import boto3
 import six.moves.queue
 from botocore.exceptions import ClientError
