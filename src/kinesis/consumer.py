@@ -4,6 +4,7 @@ import logging
 import multiprocessing
 import time
 
+import dateutil.parser
 import boto3
 import six.moves.queue
 from botocore.exceptions import ClientError
@@ -80,7 +81,7 @@ class KinesisConsumer(object):
     """
     LOCK_DURATION = 30
 
-    def __init__(self, stream_name, boto3_session=None, state=None, reader_sleep_time=None):
+    def __init__(self, stream_name, boto3_session=None, state=None, reader_sleep_time=None, start_at_timestamp=None):
         self.stream_name = stream_name
         self.error_queue = multiprocessing.Queue()
         self.record_queue = multiprocessing.Queue()
@@ -91,7 +92,8 @@ class KinesisConsumer(object):
         self.state = state
 
         self.reader_sleep_time = reader_sleep_time
-
+        self.start_at_timestamp = start_at_timestamp
+        
         self.shards = {}
         self.stream_data = None
         self.run = True
@@ -136,7 +138,15 @@ class KinesisConsumer(object):
                     iterator_args = self.state.get_iterator_args(self.state_shard_id(shard_data['ShardId']))
                 except AttributeError:
                     # no self.state
-                    iterator_args = dict(ShardIteratorType='LATEST')
+                    if self.start_at_timestamp is not None:
+                        iterator_args = {
+                            "ShardIteratorType": 'AT_TIMESTAMP',
+                            "Timestamp": dateutil.parser.parse(
+                                self.start_at_timestamp
+                            )
+                        }   
+                    else:
+                        iterator_args = dict(ShardIteratorType='LATEST')
 
                 log.info("%s iterator arguments: %s", shard_data['ShardId'], iterator_args)
 
