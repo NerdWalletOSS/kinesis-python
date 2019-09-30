@@ -139,8 +139,8 @@ class KinesisConsumer(object):
                     # no self.state
                     if self.start_at_timestamp is not None:
                         iterator_args = {
-                            "ShardIteratorType"='AT_TIMESTAMP',
-                            "Timestamp"=dateutil.parser.parse(
+                            "ShardIteratorType": 'AT_TIMESTAMP',
+                            "Timestamp": dateutil.parser.parse(
                                 self.start_at_timestamp
                             )
                         }   
