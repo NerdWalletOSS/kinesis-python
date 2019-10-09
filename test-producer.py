@@ -9,3 +9,5 @@ producer = KinesisProducer('borgstrom-test')
 
 for idx in range(100):
     producer.put(str(idx))
+
+producer.shutdown()

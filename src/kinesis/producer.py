@@ -46,8 +46,6 @@ def sizeof(obj, seen=None):
 
 class AsyncProducer(SubprocessLoop):
     """Async accumulator and producer based on a multiprocessing Queue"""
-    # Tell our subprocess loop that we don't want to terminate on shutdown since we want to drain our queue first
-    TERMINATE_ON_SHUTDOWN = False
 
     # Max size & count
     # Per: https://docs.aws.amazon.com/streams/latest/dev/service-sizes-and-limits.html
@@ -142,3 +140,6 @@ class KinesisProducer(object):
 
     def put(self, data, explicit_hash_key=None, partition_key=None):
         self.queue.put((data, explicit_hash_key, partition_key))
+
+    def shutdown(self):
+        self.async_producer.shutdown()
