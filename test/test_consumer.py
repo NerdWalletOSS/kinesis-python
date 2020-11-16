@@ -12,7 +12,7 @@ def test_setup_shards(mocker):
 
     consumer = KinesisConsumer('testing', boto3_session=mock_boto3_session)
 
-    mock_boto3_session.client.assert_called_with('kinesis')
+    mock_boto3_session.client.assert_called_with('kinesis', endpoint_url=None)
 
     consumer.kinesis_client.describe_stream.return_value = {
         'StreamDescription': {
@@ -42,5 +42,6 @@ def test_setup_shards(mocker):
         consumer.record_queue,
         consumer.error_queue,
         boto3_session=consumer.boto3_session,
+        endpoint_url=None,
         sleep_time=consumer.reader_sleep_time
     )
