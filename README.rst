@@ -1,4 +1,4 @@
-Kinesis Python
+Kinesis Python (Enhanced)
 ==============
 
 .. image:: https://img.shields.io/travis/NerdWalletOSS/kinesis-python.svg
@@ -12,6 +12,9 @@ Kinesis Python
            :alt: Latest PyPI version
 
 
+This package is an extended version of NerdWalletOSS/kinesis-python which seems to no longer be maintained.
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
 The `official Kinesis python library`_ requires the use of Amazon's "MultiLangDaemon", which is a Java executable that
 operates by piping messages over STDIN/STDOUT.
 
@@ -21,7 +24,7 @@ operates by piping messages over STDIN/STDOUT.
 
 While the desire to have a single implementation of the client library from a maintenance standpoint makes sense for
 the team responsible for the KPL, requiring the JRE to be installed and having to account for the overhead of the
-stream being consumed by Java and Python is not desireable for teams working in environments without Java.
+stream being consumed by Java and Python is not desirable for teams working in environments without Java.
 
 This is a pure-Python implementation of Kinesis producer and consumer classes that leverages Python's multiprocessing
 module to spawn a process per shard and then sends the messages back to the main process via a Queue.  It only depends
@@ -110,6 +113,35 @@ The background process takes precaution to ensure that any accumulated messages 
 shutdown time through signal handlers and the python atexit module, but it is not fully durable and if you were to
 send a ``kill -9`` to the producer process any accumulated messages would be lost.
 
+
+Custom endpoints for Localstack and other use cases
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+It is possible to customise the endpoint used to connect to Kinesis (Producer and Consumer), and DynamoDB.
+
+For example, setting up a Kinesis consumer:
+
+.. code-block:: python
+
+    from kinesis.consumer import KinesisConsumer
+
+    consumer = KinesisConsumer(stream_name='my-stream', boto3_session=session, endpoint_url='https://localhost:4568')
+    for message in consumer:
+        print "Received message: {0}".format(message)
+
+
+For example stetting up a DynamoDB state:
+
+.. code-block:: python
+
+    from kinesis.consumer import KinesisConsumer
+    from kinesis.state import DynamoDB
+
+    dynamodb_state = DynamoDB(table_name='my-kinesis-state', boto3_session=session, endpoint_url='https://localhost:4560')
+
+    consumer = KinesisConsumer(stream_name='my-stream', state=dynamodb_state)
+    for message in consumer:
+        print "Received message: {0}".format(message)
 
 
 AWS Permissions

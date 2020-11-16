@@ -9,11 +9,11 @@ with open('README.rst', 'r') as readme_fd:
     long_description = readme_fd.read()
 
 setup(
-    name='kinesis-python',
+    name='kinesis-python-enhanced',
     version=version,
-    description='Low level, multiprocessing based AWS Kinesis producer & consumer library',
+    description='Low level, multiprocessing based AWS Kinesis producer & consumer library, with additional features',
     long_description=long_description,
-    url='https://github.com/NerdWalletOSS/kinesis-python',
+    url='https://github.com/nicholasball/kinesis-python-enhanced',
 
     install_requires=[
         'boto3>=1.4.4,<2.0',
@@ -22,8 +22,8 @@ setup(
     ],
     packages=find_packages('src'),
     package_dir={'': 'src'},
-    author='Evan Borgstrom',
-    author_email='eborgstrom@nerdwallet.com',
+    author='Nicholas Ball',
+    author_email='nicholas@incorpleo.com',
     license='Apache License Version 2.0',
     classifiers=[
         'Development Status :: 4 - Beta',
