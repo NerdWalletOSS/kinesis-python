@@ -21,19 +21,20 @@ class ShardReader(SubprocessLoop):
     # this can be influeced per-reader instance via the sleep_time arg
     DEFAULT_SLEEP_TIME = 1.0
 
-    def __init__(self, shard_id, shard_iter, record_queue, error_queue, boto3_session=None, sleep_time=None):
+    def __init__(self, shard_id, shard_iter, record_queue, error_queue, boto3_session=None, sleep_time=None, endpoint_url=None):
         self.shard_id = shard_id
         self.shard_iter = shard_iter
         self.record_queue = record_queue
         self.error_queue = error_queue
         self.boto3_session = boto3_session or boto3.Session()
+        self.endpoint_url = endpoint_url
         self.sleep_time = sleep_time or self.DEFAULT_SLEEP_TIME
         self.start()
 
     def begin(self):
         """Begin the shard reader main loop"""
         log.info("Shard reader for %s starting", self.shard_id)
-        self.client = self.boto3_session.client('kinesis')
+        self.client = self.boto3_session.client('kinesis', endpoint_url=self.endpoint_url)
         self.retries = 0
 
     def loop(self):
@@ -80,13 +81,14 @@ class KinesisConsumer(object):
     """
     LOCK_DURATION = 30
 
-    def __init__(self, stream_name, boto3_session=None, state=None, reader_sleep_time=None):
+    def __init__(self, stream_name, boto3_session=None, state=None, reader_sleep_time=None, endpoint_url=None):
         self.stream_name = stream_name
         self.error_queue = multiprocessing.Queue()
         self.record_queue = multiprocessing.Queue()
 
         self.boto3_session = boto3_session or boto3.Session()
-        self.kinesis_client = self.boto3_session.client('kinesis')
+        self.endpoint_url = endpoint_url
+        self.kinesis_client = self.boto3_session.client('kinesis', endpoint_url=endpoint_url)
 
         self.state = state
 
@@ -154,6 +156,7 @@ class KinesisConsumer(object):
                     self.error_queue,
                     boto3_session=self.boto3_session,
                     sleep_time=self.reader_sleep_time,
+                    endpoint_url=self.endpoint_url
                 )
             else:
                 log.debug(
@@ -198,6 +201,7 @@ class KinesisConsumer(object):
                             if not self.run:
                                 break
 
+                            item['ShardId']=shard_id
                             log.debug(item)
                             yield item
 
