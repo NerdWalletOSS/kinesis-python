@@ -13,10 +13,10 @@ log = logging.getLogger(__name__)
 
 
 class DynamoDB(object):
-    def __init__(self, table_name, boto3_session=None):
+    def __init__(self, table_name, boto3_session=None, endpoint_url=None):
         self.boto3_session = boto3_session or boto3.Session()
 
-        self.dynamo_resource = self.boto3_session.resource('dynamodb')
+        self.dynamo_resource = self.boto3_session.resource('dynamodb', endpoint_url=endpoint_url)
         self.dynamo_table = self.dynamo_resource.Table(table_name)
 
         self.shards = {}

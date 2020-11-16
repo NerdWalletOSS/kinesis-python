@@ -12,7 +12,8 @@ def test_producer(mocker):
         producer.queue,
         max_count=None,
         max_size=None,
-        boto3_session=None
+        boto3_session=None,
+        endpoint_url=None
     )
 
     mocked_queue = mocker.patch.object(producer, 'queue')
