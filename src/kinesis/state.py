@@ -32,21 +32,36 @@ class DynamoDB(object):
                 ShardIteratorType='LATEST'
             )
 
+    def get_consumer_state(self, shard_id):
+        try:
+            return self.shards[shard_id]['consumer_state']
+        except KeyError:
+            return None
+
+    def set_consumer_state(self, shard_id, consumer_state):
+        try:
+            self.shards[shard_id]['consumer_state'] = consumer_state
+        except KeyError:
+            pass
+
     def checkpoint(self, shard_id, seq):
         fqdn = socket.getfqdn()
+        consumer_state = self.get_consumer_state(shard_id)
 
         try:
             # update the seq attr in our item
             # ensure our fqdn still holds the lock and the new seq is bigger than what's already there
             self.dynamo_table.update_item(
                 Key={'shard': shard_id},
-                UpdateExpression="set seq = :seq",
+                UpdateExpression="set seq = :seq, consumer_state = :consumer_state",
                 ConditionExpression="fqdn = :fqdn AND (attribute_not_exists(seq) OR seq < :seq)",
                 ExpressionAttributeValues={
                     ':fqdn': fqdn,
                     ':seq': seq,
+                    ':consumer_state': consumer_state,
                 }
             )
+
         except ClientError as exc:
             if exc.response['Error']['Code'] in RETRY_EXCEPTIONS:
                 log.warn("Throttled while trying to read lock table in Dynamo: %s", exc)

@@ -52,7 +52,7 @@ The consumer works by launching a process per shard in the stream and then imple
 
     consumer = KinesisConsumer(stream_name='my-stream')
     for message in consumer:
-        print "Received message: {0}".format(message)
+        print("Received message: {0}".format(message))
 
 Messages received from each of the shard processes are passed back to the main process through a Python Queue where they
 are yielded for processing.  Messages are not strictly ordered, but this is a property of Kinesis and not this
@@ -78,10 +78,31 @@ where in the stream we are currently reading from.
 
     consumer = KinesisConsumer(stream_name='my-stream', state=DynamoDB(table_name='my-kinesis-state'))
     for message in consumer:
-        print "Received message: {0}".format(message)
+        print("Received message: {0}".format(message))
 
 
 The DynamoDB table must already exist and must have a ``HASH`` key of ``shard``, with type ``S`` (string).
+
+A consumer state can also checkpointed with the stream offset, allowing stateful consumers to pickup where they left
+off. Please note that use of this saved state is somewhat expensive, and its size and use should be minimized.
+
+.. code-block:: python
+
+    from kinesis.consumer import KinesisConsumer
+    from kinesis.state import DynamoDB
+
+    consumer = KinesisConsumer(stream_name='my-stream', state=DynamoDB(table_name='my-kinesis-state'))
+
+    messages = consumer.items_with_state()
+    state, shard_id, message = next(messages)
+    while True:
+        if state is None:
+            state = {'count': 0}
+        state['count'] += 1
+
+        print("Received message: {0}, #{1}".format(message, state['count']))
+
+        state, shard_id, message = messages.send(state)
 
 
 Producer

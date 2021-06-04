@@ -80,8 +80,9 @@ class KinesisConsumer(object):
     """
     LOCK_DURATION = 30
 
-    def __init__(self, stream_name, boto3_session=None, state=None, reader_sleep_time=None):
+    def __init__(self, stream_name, consumer_name=None, boto3_session=None, state=None, reader_sleep_time=None):
         self.stream_name = stream_name
+        self.consumer_name = consumer_name
         self.error_queue = multiprocessing.Queue()
         self.record_queue = multiprocessing.Queue()
 
@@ -97,7 +98,10 @@ class KinesisConsumer(object):
         self.run = True
 
     def state_shard_id(self, shard_id):
-        return '_'.join([self.stream_name, shard_id])
+        if self.consumer_name is None:
+            return '_'.join([self.stream_name, shard_id])
+        else:
+            return '_'.join([self.stream_name, self.consumer_name, shard_id])
 
     def shutdown_shard_reader(self, shard_id):
         try:
@@ -179,7 +183,7 @@ class KinesisConsumer(object):
         self.shards = {}
         self.run = False
 
-    def __iter__(self):
+    def items_with_state(self):
         try:
             # use lock duration - 1 here since we want to renew our lock before it expires
             lock_duration_check = self.LOCK_DURATION - 1
@@ -194,14 +198,22 @@ class KinesisConsumer(object):
                         pass
                     else:
                         state_shard_id = self.state_shard_id(shard_id)
+
+                        try:
+                            c_state = self.state.get_consumer_state(state_shard_id)
+                        except AttributeError:
+                            # no self.state
+                            c_state = None
+
                         for item in resp['Records']:
                             if not self.run:
                                 break
 
                             log.debug(item)
-                            yield item
+                            c_state = yield c_state, shard_id, item
 
                             try:
+                                self.state.set_consumer_state(state_shard_id, c_state)
                                 self.state.checkpoint(state_shard_id, item['SequenceNumber'])
                             except AttributeError:
                                 # no self.state
@@ -228,3 +240,7 @@ class KinesisConsumer(object):
             self.run = False
         finally:
             self.shutdown()
+
+    def __iter__(self):
+        for _, _, item in self.items_with_state():
+            yield item
