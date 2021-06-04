@@ -210,7 +210,7 @@ class KinesisConsumer(object):
                                 break
 
                             log.debug(item)
-                            c_state = yield c_state, item
+                            c_state = yield c_state, shard_id, item
 
                             try:
                                 self.state.set_consumer_state(state_shard_id, c_state)
@@ -242,5 +242,5 @@ class KinesisConsumer(object):
             self.shutdown()
 
     def __iter__(self):
-        for _, item in self.items_with_state():
+        for _, _, item in self.items_with_state():
             yield item
