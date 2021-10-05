@@ -59,7 +59,7 @@ class AsyncProducer(SubprocessLoop):
     MAX_SIZE = (2 ** 20)
     MAX_COUNT = 500
 
-    def __init__(self, stream_name, buffer_time, queue, max_count=None, max_size=None, boto3_session=None):
+    def __init__(self, stream_name, buffer_time, queue, max_count=None, max_size=None, boto3_session=None, endpoint_url=None):
         self.stream_name = stream_name
         self.buffer_time = buffer_time
         self.queue = queue
@@ -71,7 +71,8 @@ class AsyncProducer(SubprocessLoop):
 
         if boto3_session is None:
             boto3_session = boto3.Session()
-        self.client = boto3_session.client('kinesis')
+        self.endpoint_url = endpoint_url
+        self.client = boto3_session.client('kinesis', endpoint_url=endpoint_url)
 
         self.start()
 
@@ -135,10 +136,10 @@ class AsyncProducer(SubprocessLoop):
 class KinesisProducer(object):
     """Produce to Kinesis streams via an AsyncProducer"""
 
-    def __init__(self, stream_name, buffer_time=0.5, max_count=None, max_size=None, boto3_session=None):
+    def __init__(self, stream_name, buffer_time=0.5, max_count=None, max_size=None, boto3_session=None, endpoint_url=None):
         self.queue = multiprocessing.Queue()
         self.async_producer = AsyncProducer(stream_name, buffer_time, self.queue, max_count=max_count,
-                                            max_size=max_size, boto3_session=boto3_session)
+                                            max_size=max_size, boto3_session=boto3_session, endpoint_url=endpoint_url)
 
     def put(self, data, explicit_hash_key=None, partition_key=None):
         self.queue.put((data, explicit_hash_key, partition_key))
