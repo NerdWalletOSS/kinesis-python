@@ -201,7 +201,6 @@ class KinesisConsumer(object):
                             if not self.run:
                                 break
 
-                            item['ShardId']=shard_id
                             log.debug(item)
                             yield item
 
