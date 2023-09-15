@@ -1,0 +1,21 @@
+---
+version: 1
+service:
+  name: kinesis-python
+  lifecycle:
+  tier:
+  product:
+  owner: data_ops
+  system:
+  language: python
+  framework:
+  description:
+  aliases:
+  tags:
+  repositories:
+  - name: NerdWalletOSS/kinesis-python
+    path: "/"
+    provider: github
+  tools:
+  dependencies:
+  alert_sources:
